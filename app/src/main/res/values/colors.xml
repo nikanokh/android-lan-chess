@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="chess_bg_primary">#171A1F</color>
+    <color name="chess_bg_secondary">#222831</color>
+    <color name="chess_accent">#81B64C</color>
+</resources>

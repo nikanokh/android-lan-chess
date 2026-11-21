@@ -1,0 +1,6 @@
+{
+  "name": "ChessLAN",
+  "description": "Локальное шахматное приложение для Android с игрой по Wi-Fi, точке доступа и Wi-Fi Direct без интернета.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

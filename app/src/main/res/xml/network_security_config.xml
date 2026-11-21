@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Local LAN/Hotspot/Wi-Fi Direct WebSocket traffic stays strictly inside private local networks -->
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

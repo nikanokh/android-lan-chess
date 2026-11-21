@@ -1,0 +1,229 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ChessLAN</string>
+    <string name="app_tagline">Локальные шахматы без интернета</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">Главная</string>
+    <string name="nav_play">Играть</string>
+    <string name="nav_history">История</string>
+    <string name="nav_settings">Настройки</string>
+    <string name="cd_back">Назад</string>
+    <string name="cd_app_logo">Логотип ChessLAN</string>
+    <string name="cd_profile">Профиль игрока</string>
+    <string name="cd_settings">Настройки</string>
+    <string name="cd_board_preview">Шахматная доска 8 на 8</string>
+    <string name="cd_piece_king">Белый король</string>
+    <string name="cd_piece_knight">Чёрный конь</string>
+
+    <!-- Home Screen -->
+    <string name="home_offline_badge">Локальная сеть • Без интернета</string>
+    <string name="home_hero_title">Сыграть партию</string>
+    <string name="home_hero_subtitle">Подключитесь напрямую по Wi-Fi, точке доступа или Wi-Fi Direct</string>
+    <string name="action_play">Играть</string>
+    <string name="action_create_game">Создать игру</string>
+    <string name="action_create_game_desc">Открыть комнату и стать хостом</string>
+    <string name="action_join_game">Присоединиться</string>
+    <string name="action_join_game_desc">Поиск по LAN, IP или QR</string>
+    <string name="home_connection_modes_title">Режимы подключения</string>
+    <string name="connection_wifi_lan">Wi-Fi сеть</string>
+    <string name="connection_hotspot">Точка доступа</string>
+    <string name="connection_wifi_direct">Wi-Fi Direct</string>
+    <string name="home_last_game_title">Последняя партия</string>
+    <string name="home_last_game_empty_title">Партий пока нет</string>
+    <string name="home_last_game_empty_desc">Создайте локальную комнату или подключитесь к сопернику рядом — все партии сохранятся здесь.</string>
+    <string name="home_quick_tools_title">Разделы</string>
+    <string name="action_history">История партий</string>
+    <string name="action_history_desc">Архив и экспорт PGN</string>
+    <string name="action_analysis">Анализ</string>
+    <string name="action_analysis_desc">Разбор позиций (Stockfish)</string>
+    <string name="action_profile">Профиль</string>
+    <string name="action_profile_desc">Имя и локальная статистика</string>
+
+    <!-- Create Game Screen -->
+    <string name="create_game_title">Создать игру</string>
+    <string name="create_game_time_control">Контроль времени</string>
+    <string name="create_game_side_title">Цвет фигур</string>
+    <string name="side_white">Белые</string>
+    <string name="side_random">Случайно</string>
+    <string name="side_black">Чёрные</string>
+    <string name="create_game_player_name">Имя игрока</string>
+    <string name="create_game_connection_mode">Режим подключения</string>
+    <string name="create_game_open_lobby">Открыть лобби</string>
+    <string name="time_control_unlimited">Без таймера</string>
+    <string name="time_cat_bullet">Пуля</string>
+    <string name="time_cat_blitz">Блиц</string>
+    <string name="time_cat_rapid">Рапид</string>
+    <string name="time_cat_classical">Классика</string>
+    <string name="time_cat_unlimited">Свободная</string>
+
+    <!-- Join Game Screen -->
+    <string name="join_game_title">Присоединиться</string>
+    <string name="join_game_mode_label">Способ подключения</string>
+    <string name="join_game_rooms_title">Найденные комнаты</string>
+    <string name="join_game_searching_lan">Поиск открытых комнат в локальной Wi-Fi сети (NSD)…</string>
+    <string name="join_game_no_rooms_hint">Убедитесь, что оба устройства подключены к одному Wi-Fi роутеру, или подключитесь напрямую по IP-адресу хоста.</string>
+    <string name="join_game_hotspot_hint">Подключитесь к точке доступа хоста — комнаты появятся автоматически или введите IP хоста вручную.</string>
+    <string name="join_game_direct_hint">Прямое соединение Wi-Fi Direct будет расширено на следующем этапе; сейчас доступно подключение по IP.</string>
+    <string name="join_game_refresh">Обновить поиск</string>
+    <string name="join_game_connect">Подключиться</string>
+    <string name="join_game_connecting">Подключение…</string>
+    <string name="join_game_players_count">Игроков: %1$d / 2</string>
+    <string name="join_game_manual_ip">Подключиться по IP</string>
+    <string name="join_game_manual_ip_desc">Если роутер блокирует mDNS — введите IP и порт хоста</string>
+    <string name="join_game_manual_dialog_title">Подключение по IP</string>
+    <string name="join_game_ip_label">IP-адрес хоста (например, 192.168.1.42)</string>
+    <string name="join_game_port_label">Порт (показан в лобби хоста)</string>
+    <string name="join_game_room_code_optional">Код комнаты (необязательно)</string>
+    <string name="join_game_scan_qr">Сканировать QR</string>
+    <string name="join_game_open_demo_game">Играть на одном устройстве</string>
+
+    <!-- Lobby Screen -->
+    <string name="lobby_title">Лобби комнаты</string>
+    <string name="lobby_role_host">Хост • Сервер активен</string>
+    <string name="lobby_role_client">Гость • Подключено к хосту</string>
+    <string name="lobby_waiting_title">Ожидание второго игрока</string>
+    <string name="lobby_waiting_desc">Комната опубликована в локальной сети через NSD. Второй игрок увидит её в разделе «Присоединиться» или может ввести адрес ниже.</string>
+    <string name="lobby_opponent_connected_title">Соперник подключился!</string>
+    <string name="lobby_opponent_connected_desc">Подтвердите готовность с обеих сторон, чтобы начать партию.</string>
+    <string name="lobby_room_code">Код комнаты</string>
+    <string name="lobby_address_port">Адрес в сети</string>
+    <string name="lobby_players_section">Игроки в комнате</string>
+    <string name="lobby_player_ready">Готов</string>
+    <string name="lobby_player_not_ready">Не готов</string>
+    <string name="lobby_player_waiting">Ожидание игрока…</string>
+    <string name="lobby_mark_ready">Я готов</string>
+    <string name="lobby_mark_not_ready">Снять готовность</string>
+    <string name="lobby_start_match">Начать партию</string>
+    <string name="lobby_waiting_host_start">Ожидание старта от хоста…</string>
+    <string name="lobby_preview_board">Локальная игра на одном устройстве</string>
+    <string name="lobby_cancel">Покинуть комнату</string>
+    <string name="game_draw_offer_sent_waiting">Предложение ничьей отправлено • Ожидание ответа…</string>
+    <string name="game_action_leave_room">Покинуть партию</string>
+    <string name="game_lan_opponent_disconnected">Соперник отключился</string>
+
+    <!-- Hotspot & QR Code (Stage 2.5) -->
+    <string name="hotspot_host_guide_title">Режим точки доступа (Хост)</string>
+    <string name="hotspot_host_guide_steps">1. Включите мобильную точку доступа на этом телефоне.\n2. Подключите второе устройство к этой Wi-Fi сети.\n3. Нажмите обновить IP, затем покажите QR-код или IP:порт сопернику.</string>
+    <string name="hotspot_open_settings">Точка доступа</string>
+    <string name="hotspot_open_wifi_settings">Настройки Wi-Fi</string>
+    <string name="hotspot_refresh_ip">Обновить IP</string>
+    <string name="hotspot_gateway_detected">Обнаружен шлюз точки доступа: %1$s</string>
+    <string name="hotspot_gateway_connect_hint">Нажмите «Подключиться по IP» — адрес уже подставлен, достаточно ввести порт хоста или отсканировать QR-код.</string>
+    <string name="lobby_qr_title">QR-код комнаты</string>
+    <string name="lobby_qr_tap_to_enlarge">Нажмите на QR-код, чтобы увеличить его для сканирования соперником.</string>
+    <string name="lobby_qr_scan_desc">Отсканируйте код на втором устройстве в разделе «Присоединиться → Сканировать QR».</string>
+    <string name="lobby_qr_no_ip">Локальный IP пока не определён. Подключитесь к Wi-Fi или включите точку доступа и обновите адрес.</string>
+    <string name="qr_scanner_title">Сканировать QR-код комнаты</string>
+    <string name="qr_scanner_hint">Наведите камеру на QR-код в лобби хоста — подключение начнётся автоматически.</string>
+    <string name="qr_camera_permission_needed">Для сканирования QR-кода комнаты требуется доступ к камере.</string>
+    <string name="qr_camera_permission_denied">Доступ к камере отклонён. Вы можете выдать разрешение повторно или подключиться вручную по IP.</string>
+    <string name="qr_grant_camera_permission">Разрешить камеру</string>
+
+    <!-- Game Screen & ChessBoard -->
+    <string name="game_title">Партия</string>
+    <string name="game_opponent_placeholder">Соперник</string>
+    <string name="game_you_label">Вы</string>
+    <string name="game_stage_banner">Ход белых</string>
+    <string name="game_status_white_turn">Ход белых</string>
+    <string name="game_status_black_turn">Ход чёрных</string>
+    <string name="game_status_check_white">Шах белым</string>
+    <string name="game_status_check_black">Шах чёрным</string>
+    <string name="game_status_checkmate_white">Мат • Победа белых (1-0)</string>
+    <string name="game_status_checkmate_black">Мат • Победа чёрных (0-1)</string>
+    <string name="game_status_stalemate">Пат • Ничья (½-½)</string>
+    <string name="game_status_insufficient_material">Недостаточно материала • Ничья</string>
+    <string name="game_status_fifty_move">Правило 50 ходов • Ничья</string>
+    <string name="game_status_repetition">Троекратное повторение • Ничья</string>
+    <string name="game_status_draw_agreement">Ничья по соглашению (½-½)</string>
+    <string name="game_status_resignation_white">Чёрные сдались • Победа белых</string>
+    <string name="game_status_resignation_black">Белые сдались • Победа чёрных</string>
+    <string name="game_status_timeout_white">Время вышло • Победа белых</string>
+    <string name="game_status_timeout_black">Время вышло • Победа чёрных</string>
+    <string name="game_status_timeout_draw">Время вышло • Ничья (недостаточно материала)</string>
+    <string name="game_status_aborted">Партия отменена</string>
+    <string name="game_action_draw">Ничья</string>
+    <string name="game_action_resign">Сдаться</string>
+    <string name="game_action_flip">Перевернуть</string>
+    <string name="game_action_undo">Отменить</string>
+    <string name="game_action_moves">Ходы</string>
+    <string name="game_action_menu">Меню</string>
+    <string name="game_action_reset_preview">Новая</string>
+    <string name="game_action_new_game">Новая партия</string>
+    <string name="game_action_view_board">Посмотреть доску</string>
+    <string name="game_action_export_pgn">Показать PGN</string>
+    <string name="game_action_accept">Принять</string>
+    <string name="game_action_decline">Отклонить</string>
+    <string name="game_action_cancel">Отмена</string>
+    <string name="game_action_close">Закрыть</string>
+    <string name="game_draw_offer_sent_white">Белые предложили ничью</string>
+    <string name="game_draw_offer_sent_black">Чёрные предложили ничью</string>
+    <string name="game_draw_offer_received">Соперник предлагает ничью</string>
+    <string name="game_draw_offer_declined">Предложение ничьей отклонено</string>
+    <string name="game_resign_confirm_title">Сдаться в партии?</string>
+    <string name="game_resign_confirm_body">Партия будет немедленно завершена победой соперника.</string>
+    <string name="game_over_title">Партия завершена</string>
+    <string name="game_over_moves_summary">Сыграно полуходов: %1$d</string>
+    <string name="game_history_empty">Ходов пока нет — сделайте первый ход белыми</string>
+    <string name="game_history_title">История ходов (SAN)</string>
+    <string name="game_history_viewing_ply">Просмотр хода %1$d из %2$d</string>
+    <string name="game_history_return_live">К партии</string>
+    <string name="game_premove_badge">Премув %1$s→%2$s</string>
+    <string name="cd_cancel_premove">Отменить премув</string>
+    <string name="game_menu_title">Меню партии</string>
+    <string name="game_pgn_title">Запись партии (PGN)</string>
+    <string name="game_connection_local">Локальная игра</string>
+    <string name="game_connection_connected">Подключено</string>
+    <string name="game_connection_reconnecting">Переподключение…</string>
+    <string name="game_connection_disconnected">Нет связи</string>
+    <string name="cd_history_first">К началу партии</string>
+    <string name="cd_history_prev">Предыдущий ход</string>
+    <string name="cd_history_next">Следующий ход</string>
+    <string name="cd_history_last">К последнему ходу</string>
+    <string name="cd_game_menu">Меню партии</string>
+    <string name="board_promotion_title">Превращение пешки</string>
+    <string name="board_piece_queen">Ферзь</string>
+    <string name="board_piece_rook">Ладья</string>
+    <string name="board_piece_bishop">Слон</string>
+    <string name="board_piece_knight">Конь</string>
+    <string name="board_piece_king">Король</string>
+    <string name="board_piece_pawn">Пешка</string>
+
+    <!-- History Screen -->
+    <string name="history_title">История партий</string>
+    <string name="history_empty_title">История партий пуста</string>
+    <string name="history_empty_desc">Локальная база данных Room готова. Сыгранные партии с PGN и ходами появятся здесь автоматически.</string>
+    <string name="history_moves_count">%1$d ходов</string>
+
+    <!-- Analysis Screen -->
+    <string name="analysis_title">Анализ партий</string>
+    <string name="analysis_subtitle">Интерфейс ChessAnalysisEngine подготовлен для интеграции Stockfish (Этап 7).</string>
+    <string name="analysis_badges_title">Классификация ходов</string>
+
+    <!-- Profile Screen -->
+    <string name="profile_title">Профиль</string>
+    <string name="profile_local_badge">Локальный профиль</string>
+    <string name="profile_games_played">Сыграно партий</string>
+    <string name="profile_wins">Победы</string>
+    <string name="profile_draws">Ничьи</string>
+
+    <!-- Settings Screen -->
+    <string name="settings_title">Настройки</string>
+    <string name="settings_player_section">Игрок</string>
+    <string name="settings_player_name_label">Имя по умолчанию</string>
+    <string name="settings_appearance_section">Внешний вид</string>
+    <string name="settings_board_theme">Тема доски</string>
+    <string name="settings_gameplay_section">Игровой процесс</string>
+    <string name="settings_sound">Звуковые эффекты</string>
+    <string name="settings_animations">Анимации фигур</string>
+    <string name="settings_coordinates">Координаты доски</string>
+    <string name="settings_legal_moves">Подсветка возможных ходов</string>
+    <string name="settings_last_move">Подсветка последнего хода</string>
+    <string name="settings_confirm_resign">Подтверждение сдачи</string>
+    <string name="settings_vibration">Вибрация</string>
+    <string name="settings_saved_note">Все параметры сохраняются локально в DataStore</string>
+    <string name="default_player_name">Игрок</string>
+
+    <!-- Stage Badges -->
+    <string name="stage_badge_foundation">Этап 1 • Архитектура готова</string>
+</resources>
