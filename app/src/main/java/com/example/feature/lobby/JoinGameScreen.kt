@@ -88,18 +88,21 @@ fun JoinGameScreen(
     val discoveredRooms by viewModel.discoveredRooms.collectAsStateWithLifecycle()
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val sessionState by viewModel.sessionState.collectAsStateWithLifecycle()
+    val wifiDirectState by viewModel.wifiDirectState.collectAsStateWithLifecycle()
     val defaultPlayerName by viewModel.defaultPlayerName.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     var selectedMode by rememberSaveable { mutableStateOf(initialMode) }
     var playerName by rememberSaveable { mutableStateOf("") }
+    var hasSyncedDefaultName by rememberSaveable { mutableStateOf(false) }
     var showManualIpDialog by rememberSaveable { mutableStateOf(false) }
     var showQrScanner by rememberSaveable { mutableStateOf(false) }
     var detectedGatewayIp by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(defaultPlayerName) {
-        if (playerName.isBlank()) {
-            playerName = defaultPlayerName
+        if (defaultPlayerName != null && !hasSyncedDefaultName) {
+            playerName = defaultPlayerName.orEmpty()
+            hasSyncedDefaultName = true
         }
     }
 
@@ -113,6 +116,17 @@ fun JoinGameScreen(
         }
     }
 
+    // Auto-enter Lobby as soon as a Wi-Fi Direct client connection finishes WebSocket handshake
+    LaunchedEffect(sessionState.role, sessionState.roomId, sessionState.isConnecting) {
+        if (selectedMode == ConnectionType.WIFI_DIRECT &&
+            sessionState.role == com.example.core.network.SessionRole.CLIENT &&
+            sessionState.roomId.isNotBlank() &&
+            !sessionState.isConnecting
+        ) {
+            onJoinedLobby()
+        }
+    }
+
     DisposableEffect(Unit) {
         onDispose {
             viewModel.stopDiscovery()
@@ -123,6 +137,7 @@ fun JoinGameScreen(
     val spacing = ChessTheme.spacing
     val isDiscovering = connectionState is ConnectionState.Discovering
     val isConnecting = sessionState.isConnecting || connectionState is ConnectionState.Connecting
+    val resolvedPlayerName = playerName.trim().ifEmpty { defaultPlayerName ?: "Игрок" }
 
     if (showQrScanner) {
         QrScannerDialog(
@@ -130,7 +145,7 @@ fun JoinGameScreen(
                 showQrScanner = false
                 viewModel.connectFromQr(
                     rawQrContent = rawQr,
-                    playerName = playerName.trim().ifEmpty { defaultPlayerName },
+                    playerName = resolvedPlayerName,
                     onConnected = onJoinedLobby
                 )
             },
@@ -139,12 +154,13 @@ fun JoinGameScreen(
     }
 
     if (showManualIpDialog) {
+        val prefillIp = when (selectedMode) {
+            ConnectionType.HOTSPOT -> detectedGatewayIp.orEmpty()
+            ConnectionType.WIFI_DIRECT -> wifiDirectState.groupOwnerAddress.orEmpty()
+            ConnectionType.WIFI_LAN -> ""
+        }
         ManualIpConnectDialog(
-            initialIp = if (selectedMode == ConnectionType.HOTSPOT) {
-                detectedGatewayIp.orEmpty()
-            } else {
-                ""
-            },
+            initialIp = prefillIp,
             isConnecting = isConnecting,
             onDismiss = { showManualIpDialog = false },
             onConnect = { ip, port, roomCode ->
@@ -152,7 +168,7 @@ fun JoinGameScreen(
                     host = ip,
                     portText = port,
                     roomCodeOrSecret = roomCode,
-                    playerName = playerName.trim().ifEmpty { defaultPlayerName },
+                    playerName = resolvedPlayerName,
                     mode = selectedMode,
                     onConnected = {
                         showManualIpDialog = false
@@ -193,7 +209,10 @@ fun JoinGameScreen(
                         SectionHeader(title = stringResource(R.string.create_game_player_name))
                         OutlinedTextField(
                             value = playerName,
-                            onValueChange = { playerName = it },
+                            onValueChange = {
+                                hasSyncedDefaultName = true
+                                playerName = it
+                            },
                             singleLine = true,
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -254,6 +273,24 @@ fun JoinGameScreen(
                             onRefreshGateway = {
                                 detectedGatewayIp = HotspotNetworkHelper.resolveWifiGatewayIpv4(context)
                                 viewModel.startDiscovery(ConnectionType.HOTSPOT)
+                            }
+                        )
+                    }
+                }
+
+                if (selectedMode == ConnectionType.WIFI_DIRECT) {
+                    item(key = "wifi_direct_client_section") {
+                        WifiDirectClientSection(
+                            wifiDirectState = wifiDirectState,
+                            isConnectingSocket = isConnecting,
+                            onPermissionResult = { granted ->
+                                viewModel.onWifiDirectClientPermissionChanged(granted)
+                            },
+                            onRefreshPeers = {
+                                viewModel.startDiscovery(ConnectionType.WIFI_DIRECT)
+                            },
+                            onConnectPeer = { peer ->
+                                viewModel.connectToWifiDirectPeer(peer, resolvedPlayerName)
                             }
                         )
                     }
@@ -379,7 +416,7 @@ fun JoinGameScreen(
                             onConnect = {
                                 viewModel.connectToRoom(
                                     room = room,
-                                    playerName = playerName.trim().ifEmpty { defaultPlayerName },
+                                    playerName = resolvedPlayerName,
                                     onConnected = onJoinedLobby
                                 )
                             }

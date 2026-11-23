@@ -73,8 +73,13 @@ class SettingsDataStore @Inject constructor(
         }
 
     suspend fun updatePlayerName(name: String) {
+        val trimmed = name.trim()
         context.settingsDataStore.edit { prefs ->
-            prefs[Keys.PLAYER_NAME] = name.trim().ifEmpty { "Игрок" }
+            if (trimmed.isEmpty()) {
+                prefs.remove(Keys.PLAYER_NAME)
+            } else {
+                prefs[Keys.PLAYER_NAME] = trimmed
+            }
         }
     }
 

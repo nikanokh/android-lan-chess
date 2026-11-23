@@ -2,15 +2,13 @@ package com.example.feature.lobby
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -51,16 +49,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.example.R
 import com.example.core.ui.components.ChessPrimaryButton
-import com.example.core.ui.components.ChessSurfaceCard
 import com.example.core.ui.components.ChessTopBar
 import com.example.core.ui.components.SectionHeader
 import com.example.core.ui.theme.ChessDimensions
 import com.example.core.ui.theme.ChessTheme
-import com.example.core.ui.theme.MonoFontFamily
 import com.example.core.network.ConnectionType
 import com.example.domain.model.SideSelection
 import com.example.domain.model.TimeControl
-import com.example.domain.model.TimeControlCategory
 import com.example.domain.usecase.ObserveSettingsUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -73,16 +68,15 @@ import javax.inject.Inject
 class CreateGameViewModel @Inject constructor(
     observeSettingsUseCase: ObserveSettingsUseCase
 ) : ViewModel() {
-    val defaultPlayerName: StateFlow<String> = observeSettingsUseCase()
+    val defaultPlayerName: StateFlow<String?> = observeSettingsUseCase()
         .map { it.playerName }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = "Игрок"
+            initialValue = null
         )
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CreateGameScreen(
     onNavigateBack: (() -> Unit)?,
@@ -94,10 +88,12 @@ fun CreateGameScreen(
     var selectedSide by rememberSaveable { mutableStateOf(SideSelection.RANDOM) }
     var selectedConnectionType by rememberSaveable { mutableStateOf(ConnectionType.WIFI_LAN) }
     var playerName by rememberSaveable { mutableStateOf("") }
+    var hasSyncedDefaultName by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(defaultName) {
-        if (playerName.isBlank()) {
-            playerName = defaultName
+        if (defaultName != null && !hasSyncedDefaultName) {
+            playerName = defaultName.orEmpty()
+            hasSyncedDefaultName = true
         }
     }
 
@@ -106,6 +102,7 @@ fun CreateGameScreen(
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             ChessTopBar(
                 title = stringResource(R.string.create_game_title),
@@ -134,7 +131,10 @@ fun CreateGameScreen(
                         SectionHeader(title = stringResource(R.string.create_game_player_name))
                         OutlinedTextField(
                             value = playerName,
-                            onValueChange = { playerName = it },
+                            onValueChange = {
+                                hasSyncedDefaultName = true
+                                playerName = it
+                            },
                             singleLine = true,
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -204,67 +204,10 @@ fun CreateGameScreen(
                 }
 
                 item(key = "time_controls") {
-                    Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                        SectionHeader(
-                            title = stringResource(R.string.create_game_time_control),
-                            trailingText = TimeControl.fromId(selectedTimeControlId).label
-                        )
-                        ChessSurfaceCard {
-                            FlowRow(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                TimeControl.AllPresets.forEach { preset ->
-                                    val isSelected = preset.id == selectedTimeControlId
-                                    val categoryName = when (preset.category) {
-                                        TimeControlCategory.UNLIMITED -> stringResource(R.string.time_cat_unlimited)
-                                        TimeControlCategory.BULLET -> stringResource(R.string.time_cat_bullet)
-                                        TimeControlCategory.BLITZ -> stringResource(R.string.time_cat_blitz)
-                                        TimeControlCategory.RAPID -> stringResource(R.string.time_cat_rapid)
-                                        TimeControlCategory.CLASSICAL -> stringResource(R.string.time_cat_classical)
-                                    }
-                                    Surface(
-                                        onClick = { selectedTimeControlId = preset.id },
-                                        modifier = Modifier
-                                            .widthIn(min = 96.dp)
-                                            .height(62.dp)
-                                            .testTag("time_control_${preset.id}"),
-                                        shape = RoundedCornerShape(10.dp),
-                                        color = if (isSelected) colors.accentGreenContainer else colors.backgroundSecondary,
-                                        border = BorderStroke(
-                                            width = if (isSelected) 1.5.dp else 1.dp,
-                                            color = if (isSelected) colors.accentGreen else colors.borderSubtle
-                                        )
-                                    ) {
-                                        Column(
-                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                            verticalArrangement = Arrangement.Center
-                                        ) {
-                                            Text(
-                                                text = if (preset.isUnlimited) {
-                                                    stringResource(R.string.time_control_unlimited)
-                                                } else {
-                                                    preset.label
-                                                },
-                                                style = MaterialTheme.typography.titleSmall.copy(
-                                                    fontFamily = MonoFontFamily,
-                                                    fontWeight = FontWeight.Bold
-                                                ),
-                                                color = if (isSelected) colors.accentGreen else colors.textPrimary
-                                            )
-                                            Text(
-                                                text = categoryName,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = colors.textSecondary
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    TimeControlPickerSection(
+                        selectedTimeControlId = selectedTimeControlId,
+                        onSelectTimeControl = { selectedTimeControlId = it }
+                    )
                 }
 
                 item(key = "connection_mode") {
@@ -312,7 +255,7 @@ fun CreateGameScreen(
                             onCreateRoom(
                                 selectedTimeControlId,
                                 selectedSide,
-                                playerName.trim().ifEmpty { defaultName },
+                                playerName.trim().ifEmpty { defaultName ?: "Игрок" },
                                 selectedConnectionType
                             )
                         }

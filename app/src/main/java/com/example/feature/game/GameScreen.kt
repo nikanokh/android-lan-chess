@@ -53,8 +53,8 @@ fun GameScreen(
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    LaunchedEffect(timeControlId, playerSide, isLanMatch) {
-        viewModel.initializeSession(timeControlId, playerSide, isLanMatch)
+    LaunchedEffect(timeControlId, playerSide, isLanMatch, playerName) {
+        viewModel.initializeSession(timeControlId, playerSide, isLanMatch, playerName)
     }
 
     val handleExit: () -> Unit = {
@@ -75,6 +75,8 @@ fun GameScreen(
         onNavigateBack = handleExit,
         onSquareTap = viewModel::onSquareTap,
         onMoveAttempt = viewModel::onMoveAttempt,
+        onInvalidDrop = viewModel::onInvalidDrop,
+        onBoardFlipped = viewModel::onBoardFlipped,
         onCancelPremove = viewModel::cancelPremove,
         onPromotionSelected = viewModel::onPromotionSelected,
         onPromotionDismissed = viewModel::onPromotionDismissed,
@@ -130,7 +132,9 @@ fun GameScreenContent(
     onOpenPgn: (whiteName: String, blackName: String) -> Unit,
     onDismissPgn: () -> Unit,
     overridePlayerName: String = "",
-    onCancelPremove: () -> Unit = {}
+    onCancelPremove: () -> Unit = {},
+    onInvalidDrop: (BoardSquare, BoardSquare?) -> Unit = { _, _ -> },
+    onBoardFlipped: () -> Unit = {}
 ) {
     var flipped by rememberSaveable(uiState.playerSide) {
         mutableStateOf(uiState.playerSide == PieceColor.BLACK)
@@ -267,6 +271,7 @@ fun GameScreenContent(
                             config = boardConfig,
                             onSquareTap = onSquareTap,
                             onMoveAttempt = onMoveAttempt,
+                            onInvalidDrop = onInvalidDrop,
                             canSelectOrDrag = { _, piece -> uiState.canInteractWithPiece(piece) },
                             cornerRadius = 8.dp,
                             modifier = Modifier.size(boardSide)
@@ -335,7 +340,10 @@ fun GameScreenContent(
                                 uiState.drawOfferState == DrawOfferState.RECEIVED,
                             onOfferDraw = onOfferDraw,
                             onResign = onRequestResign,
-                            onFlip = { flipped = !flipped },
+                            onFlip = {
+                                flipped = !flipped
+                                onBoardFlipped()
+                            },
                             onOpenMoves = { showMoveHistorySheet = true },
                             onOpenMenu = { showGameMenuSheet = true }
                         )
@@ -380,6 +388,7 @@ fun GameScreenContent(
                                     config = boardConfig,
                                     onSquareTap = onSquareTap,
                                     onMoveAttempt = onMoveAttempt,
+                                    onInvalidDrop = onInvalidDrop,
                                     canSelectOrDrag = { _, piece -> uiState.canInteractWithPiece(piece) },
                                     cornerRadius = 0.dp,
                                     modifier = Modifier.size(boardSide)
@@ -419,7 +428,10 @@ fun GameScreenContent(
                                 uiState.drawOfferState == DrawOfferState.RECEIVED,
                             onOfferDraw = onOfferDraw,
                             onResign = onRequestResign,
-                            onFlip = { flipped = !flipped },
+                            onFlip = {
+                                flipped = !flipped
+                                onBoardFlipped()
+                            },
                             onOpenMoves = { showMoveHistorySheet = true },
                             onOpenMenu = { showGameMenuSheet = true },
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp)

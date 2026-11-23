@@ -75,6 +75,12 @@ abstract class BindingsModule {
     abstract fun bindNetworkConnectionManager(
         impl: com.example.core.network.GameSessionManager
     ): com.example.core.network.NetworkConnectionManager
+
+    @Binds
+    @Singleton
+    abstract fun bindChessSoundPlayer(
+        impl: com.example.core.audio.AndroidChessSoundPlayer
+    ): com.example.core.audio.ChessSoundPlayer
 }
 
 @Module

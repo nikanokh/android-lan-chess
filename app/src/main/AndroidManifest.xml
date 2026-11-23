@@ -2,11 +2,24 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Local LAN sockets & Android NSD (mDNS) discovery — no internet server or location permission needed -->
+    <!-- Local LAN sockets, Android NSD (mDNS), and Wi-Fi Direct P2P -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <!-- Android 13+ Wi-Fi Direct P2P without location access -->
+    <uses-permission
+        android:name="android.permission.NEARBY_WIFI_DEVICES"
+        android:usesPermissionFlags="neverForLocation"
+        tools:targetApi="33" />
+    <!-- Legacy Android <= 12 compatibility solely for WifiP2pManager peer discovery -->
+    <uses-permission
+        android:name="android.permission.ACCESS_FINE_LOCATION"
+        android:maxSdkVersion="32" />
+    <uses-feature
+        android:name="android.hardware.wifi.direct"
+        android:required="false" />
     <!-- Optional runtime permission solely for scanning Host room QR codes -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature

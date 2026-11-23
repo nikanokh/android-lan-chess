@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -16,7 +17,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -57,6 +61,7 @@ import com.example.domain.usecase.UpdateSettingsUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -72,6 +77,14 @@ class SettingsViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = AppSettings()
     )
+
+    val persistedPlayerName: StateFlow<String?> = observeSettingsUseCase()
+        .map { it.playerName }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = null
+        )
 
     fun onPlayerNameChanged(name: String) {
         viewModelScope.launch { updateSettingsUseCase.setPlayerName(name) }
@@ -120,18 +133,22 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val settings by viewModel.uiState.collectAsStateWithLifecycle()
-    var nameInput by rememberSaveable { mutableStateOf(settings.playerName) }
+    val persistedName by viewModel.persistedPlayerName.collectAsStateWithLifecycle()
+    var nameInput by rememberSaveable { mutableStateOf("") }
+    var hasSyncedInitialName by rememberSaveable { mutableStateOf(false) }
     val colors = ChessTheme.colors
     val spacing = ChessTheme.spacing
 
-    LaunchedEffect(settings.playerName) {
-        if (nameInput != settings.playerName && nameInput.isBlank()) {
-            nameInput = settings.playerName
+    LaunchedEffect(persistedName) {
+        if (persistedName != null && !hasSyncedInitialName) {
+            nameInput = persistedName.orEmpty()
+            hasSyncedInitialName = true
         }
     }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             ChessTopBar(
                 title = stringResource(R.string.settings_title),
@@ -160,11 +177,21 @@ fun SettingsScreen(
                         SectionHeader(title = stringResource(R.string.settings_player_section))
                         OutlinedTextField(
                             value = nameInput,
-                            onValueChange = {
-                                nameInput = it
-                                viewModel.onPlayerNameChanged(it)
+                            onValueChange = { updated ->
+                                hasSyncedInitialName = true
+                                nameInput = updated
+                                viewModel.onPlayerNameChanged(updated)
                             },
                             label = { Text(stringResource(R.string.settings_player_name_label)) },
+                            trailingIcon = {
+                                if (hasSyncedInitialName && nameInput.trim().isNotEmpty() && nameInput.trim() == persistedName) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Check,
+                                        contentDescription = null,
+                                        tint = colors.accentGreen
+                                    )
+                                }
+                            },
                             singleLine = true,
                             modifier = Modifier
                                 .fillMaxWidth()

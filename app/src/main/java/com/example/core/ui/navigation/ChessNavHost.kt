@@ -1,6 +1,9 @@
 package com.example.core.ui.navigation
 
 import androidx.annotation.StringRes
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -248,7 +251,11 @@ private fun ChessNavHost(
 ) {
     NavHost(
         navController = navController,
-        startDestination = AppDestination.Home
+        startDestination = AppDestination.Home,
+        enterTransition = { fadeIn(animationSpec = tween(durationMillis = 90)) },
+        exitTransition = { fadeOut(animationSpec = tween(durationMillis = 70)) },
+        popEnterTransition = { fadeIn(animationSpec = tween(durationMillis = 90)) },
+        popExitTransition = { fadeOut(animationSpec = tween(durationMillis = 70)) }
     ) {
         composable<AppDestination.Home> {
             HomeRoute(
@@ -397,7 +404,11 @@ internal fun navigateTopLevelTab(
     navController: NavHostController,
     destination: AppDestination
 ) {
+    val currentDestination = navController.currentBackStackEntry?.destination
     if (destination == AppDestination.Home) {
+        if (currentDestination?.hasRoute(AppDestination.Home::class) == true) {
+            return
+        }
         val poppedToHome = navController.popBackStack<AppDestination.Home>(inclusive = false)
         if (!poppedToHome) {
             navController.navigate(AppDestination.Home) {
@@ -409,7 +420,6 @@ internal fun navigateTopLevelTab(
         }
         return
     }
-    val currentDestination = navController.currentBackStackEntry?.destination
     if (currentDestination?.hasRoute(destination::class) == true) {
         return
     }

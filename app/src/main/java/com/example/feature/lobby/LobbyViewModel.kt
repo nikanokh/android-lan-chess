@@ -2,11 +2,16 @@ package com.example.feature.lobby
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.core.audio.ChessSoundEffect
+import com.example.core.audio.ChessSoundPlayer
 import com.example.core.network.ConnectionState
 import com.example.core.network.ConnectionType
 import com.example.core.network.DiscoveredRoom
 import com.example.core.network.GameSessionManager
 import com.example.core.network.GameSessionState
+import com.example.core.network.WifiDirectPeer
+import com.example.core.network.WifiDirectState
+import com.example.domain.model.AppSettings
 import com.example.domain.model.SideSelection
 import com.example.domain.model.TimeControl
 import com.example.domain.usecase.ObserveSettingsUseCase
@@ -24,21 +29,52 @@ import javax.inject.Inject
 @HiltViewModel
 class LobbyViewModel @Inject constructor(
     private val gameSessionManager: GameSessionManager,
-    observeSettingsUseCase: ObserveSettingsUseCase
+    observeSettingsUseCase: ObserveSettingsUseCase,
+    private val soundPlayer: ChessSoundPlayer
 ) : ViewModel() {
 
     val sessionState: StateFlow<GameSessionState> = gameSessionManager.sessionState
     val connectionState: StateFlow<ConnectionState> = gameSessionManager.connectionState
     val discoveredRooms: StateFlow<List<DiscoveredRoom>> = gameSessionManager.discoveredRooms
     val localIpAddress: StateFlow<String?> = gameSessionManager.localIpAddress
+    val wifiDirectState: StateFlow<WifiDirectState> = gameSessionManager.wifiDirectState
 
-    val defaultPlayerName: StateFlow<String> = observeSettingsUseCase()
+    private val settingsState: StateFlow<AppSettings> = observeSettingsUseCase().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = AppSettings()
+    )
+
+    val defaultPlayerName: StateFlow<String?> = observeSettingsUseCase()
         .map { it.playerName.ifBlank { "Игрок" } }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = "Игрок"
+            initialValue = null
         )
+
+    init {
+        viewModelScope.launch {
+            var previousOpponent: String? = sessionState.value.opponentName
+            var previousOpponentReady = isOpponentReady(sessionState.value)
+            sessionState.collect { current ->
+                val opponentReadyNow = isOpponentReady(current)
+                val opponentJoined = previousOpponent.isNullOrBlank() && !current.opponentName.isNullOrBlank()
+                val opponentBecameReady = !previousOpponentReady && opponentReadyNow
+                if ((opponentJoined || opponentBecameReady) && settingsState.value.soundEnabled) {
+                    soundPlayer.play(ChessSoundEffect.NOTIFICATION)
+                }
+                previousOpponent = current.opponentName
+                previousOpponentReady = opponentReadyNow
+            }
+        }
+    }
+
+    private fun isOpponentReady(state: GameSessionState): Boolean = when (state.role) {
+        com.example.core.network.SessionRole.HOST -> state.roomInfo?.clientReady == true
+        com.example.core.network.SessionRole.CLIENT -> state.roomInfo?.hostReady == true
+        com.example.core.network.SessionRole.NONE -> false
+    }
 
     fun ensureHostRoomCreated(
         timeControlId: String,
@@ -74,7 +110,7 @@ class LobbyViewModel @Inject constructor(
         viewModelScope.launch {
             val result = gameSessionManager.connectToRoom(
                 room = room,
-                playerName = playerName.ifBlank { defaultPlayerName.value }
+                playerName = playerName.ifBlank { defaultPlayerName.value ?: "Игрок" }
             )
             if (result.isSuccess) {
                 onConnected()
@@ -96,7 +132,7 @@ class LobbyViewModel @Inject constructor(
                 host = host,
                 port = port,
                 roomSecretOrCode = roomCodeOrSecret,
-                playerName = playerName.ifBlank { defaultPlayerName.value },
+                playerName = playerName.ifBlank { defaultPlayerName.value ?: "Игрок" },
                 connectionType = mode
             )
             if (result.isSuccess) {
@@ -113,7 +149,7 @@ class LobbyViewModel @Inject constructor(
         viewModelScope.launch {
             val result = gameSessionManager.connectFromQr(
                 rawQrContent = rawQrContent,
-                playerName = playerName.ifBlank { defaultPlayerName.value }
+                playerName = playerName.ifBlank { defaultPlayerName.value ?: "Игрок" }
             )
             if (result.isSuccess) {
                 onConnected()
@@ -125,8 +161,36 @@ class LobbyViewModel @Inject constructor(
         gameSessionManager.refreshLocalNetworkAddress()
     }
 
+    fun onWifiDirectHostPermissionChanged(granted: Boolean) {
+        gameSessionManager.refreshWifiDirectPermissions()
+        if (granted) {
+            gameSessionManager.restartWifiDirectHostGroup()
+        }
+    }
+
+    fun restartWifiDirectHostGroup() {
+        gameSessionManager.restartWifiDirectHostGroup()
+    }
+
+    fun onWifiDirectClientPermissionChanged(granted: Boolean) {
+        gameSessionManager.refreshWifiDirectPermissions()
+        if (granted) {
+            startDiscovery(ConnectionType.WIFI_DIRECT)
+        }
+    }
+
+    fun connectToWifiDirectPeer(peer: WifiDirectPeer, playerName: String) {
+        gameSessionManager.connectToWifiDirectPeer(
+            peer = peer,
+            playerName = playerName.ifBlank { defaultPlayerName.value ?: "Игрок" }
+        )
+    }
+
     fun toggleLocalReady() {
         val nextReady = !sessionState.value.isLocalReady
+        if (settingsState.value.soundEnabled) {
+            soundPlayer.play(ChessSoundEffect.CLICK)
+        }
         viewModelScope.launch {
             gameSessionManager.setLocalReady(nextReady)
         }

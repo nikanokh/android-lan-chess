@@ -49,6 +49,7 @@ data class TimeControl(
     companion object {
         val UNLIMITED = TimeControl("unlimited", "∞", 0L, 0L, TimeControlCategory.UNLIMITED)
         val BULLET_1_0 = TimeControl("1+0", "1+0", 60L, 0L, TimeControlCategory.BULLET)
+        val BULLET_1_1 = TimeControl("1+1", "1+1", 60L, 1L, TimeControlCategory.BULLET)
         val BULLET_2_1 = TimeControl("2+1", "2+1", 120L, 1L, TimeControlCategory.BULLET)
         val BLITZ_3_0 = TimeControl("3+0", "3+0", 180L, 0L, TimeControlCategory.BLITZ)
         val BLITZ_3_2 = TimeControl("3+2", "3+2", 180L, 2L, TimeControlCategory.BLITZ)
@@ -58,23 +59,63 @@ data class TimeControl(
         val RAPID_10_5 = TimeControl("10+5", "10+5", 600L, 5L, TimeControlCategory.RAPID)
         val RAPID_15_10 = TimeControl("15+10", "15+10", 900L, 10L, TimeControlCategory.RAPID)
         val CLASSICAL_30_0 = TimeControl("30+0", "30+0", 1800L, 0L, TimeControlCategory.CLASSICAL)
+        val CLASSICAL_30_20 = TimeControl("30+20", "30+20", 1800L, 20L, TimeControlCategory.CLASSICAL)
+        val CLASSICAL_45_15 = TimeControl("45+15", "45+15", 2700L, 15L, TimeControlCategory.CLASSICAL)
+        val CLASSICAL_60_0 = TimeControl("60+0", "60+0", 3600L, 0L, TimeControlCategory.CLASSICAL)
+        val CLASSICAL_60_30 = TimeControl("60+30", "60+30", 3600L, 30L, TimeControlCategory.CLASSICAL)
 
-        val AllPresets: List<TimeControl> = listOf(
-            UNLIMITED,
-            BULLET_1_0,
-            BULLET_2_1,
-            BLITZ_3_0,
-            BLITZ_3_2,
-            BLITZ_5_0,
-            BLITZ_5_3,
-            RAPID_10_0,
-            RAPID_10_5,
-            RAPID_15_10,
-            CLASSICAL_30_0
+        val BulletPresets: List<TimeControl> = listOf(BULLET_1_0, BULLET_1_1, BULLET_2_1)
+        val BlitzPresets: List<TimeControl> = listOf(BLITZ_3_0, BLITZ_3_2, BLITZ_5_0, BLITZ_5_3)
+        val RapidPresets: List<TimeControl> = listOf(RAPID_10_0, RAPID_10_5, RAPID_15_10)
+        val ClassicalPresets: List<TimeControl> = listOf(
+            CLASSICAL_30_0,
+            CLASSICAL_30_20,
+            CLASSICAL_45_15,
+            CLASSICAL_60_0,
+            CLASSICAL_60_30,
+            UNLIMITED
         )
 
-        fun fromId(id: String): TimeControl =
-            AllPresets.firstOrNull { it.id == id } ?: RAPID_10_0
+        val AllPresets: List<TimeControl> = BulletPresets + BlitzPresets + RapidPresets + ClassicalPresets
+
+        fun custom(minutes: Int, incrementSeconds: Int): TimeControl {
+            val safeMinutes = minutes.coerceIn(1, 180)
+            val safeInc = incrementSeconds.coerceIn(0, 60)
+            val id = "$safeMinutes+$safeInc"
+            AllPresets.firstOrNull { it.id == id }?.let { return it }
+            val initialSec = safeMinutes * 60L
+            val estimatedMinutes = safeMinutes + (40.0 * safeInc / 60.0)
+            val category = when {
+                estimatedMinutes < 3.0 -> TimeControlCategory.BULLET
+                estimatedMinutes < 10.0 -> TimeControlCategory.BLITZ
+                estimatedMinutes < 30.0 -> TimeControlCategory.RAPID
+                else -> TimeControlCategory.CLASSICAL
+            }
+            return TimeControl(
+                id = id,
+                label = id,
+                initialSeconds = initialSec,
+                incrementSeconds = safeInc.toLong(),
+                category = category
+            )
+        }
+
+        fun fromId(id: String): TimeControl {
+            val trimmed = id.trim()
+            if (trimmed.equals("unlimited", ignoreCase = true) || trimmed == "∞") {
+                return UNLIMITED
+            }
+            AllPresets.firstOrNull { it.id == trimmed }?.let { return it }
+            val parts = trimmed.split("+")
+            if (parts.size == 2) {
+                val minutes = parts[0].trim().toIntOrNull()
+                val increment = parts[1].trim().toIntOrNull()
+                if (minutes != null && increment != null && minutes in 1..180 && increment in 0..60) {
+                    return custom(minutes, increment)
+                }
+            }
+            return RAPID_10_0
+        }
     }
 }
 
@@ -138,4 +179,28 @@ data class GameSummary(
     val moveCount: Int,
     val connectionType: ConnectionType,
     val pgn: String
+)
+
+data class CompletedMoveRecord(
+    val moveNumber: Int,
+    val color: PieceColor,
+    val san: String,
+    val uci: String,
+    val fenAfter: String,
+    val timestamp: Long
+)
+
+data class CompletedGameRecord(
+    val gameUuid: String,
+    val createdAt: Long,
+    val finishedAt: Long,
+    val whitePlayer: String,
+    val blackPlayer: String,
+    val result: GameResult,
+    val timeControlLabel: String,
+    val initialFen: String,
+    val finalFen: String,
+    val pgn: String,
+    val connectionType: ConnectionType,
+    val moves: List<CompletedMoveRecord>
 )

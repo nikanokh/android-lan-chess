@@ -79,6 +79,7 @@ fun LobbyScreen(
     viewModel: LobbyViewModel = hiltViewModel()
 ) {
     val sessionState by viewModel.sessionState.collectAsStateWithLifecycle()
+    val wifiDirectState by viewModel.wifiDirectState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val colors = ChessTheme.colors
     val spacing = ChessTheme.spacing
@@ -227,6 +228,18 @@ fun LobbyScreen(
                         HotspotHostGuideCard(
                             onOpenHotspotSettings = { HotspotNetworkHelper.openHotspotSettings(context) },
                             onRefreshIp = { viewModel.refreshHostAddress() }
+                        )
+                    }
+                }
+
+                if (isHostRole && effectiveConnectionType == ConnectionType.WIFI_DIRECT) {
+                    item(key = "wifi_direct_host_card") {
+                        WifiDirectHostCard(
+                            wifiDirectState = wifiDirectState,
+                            onPermissionResult = { granted ->
+                                viewModel.onWifiDirectHostPermissionChanged(granted)
+                            },
+                            onRestartGroup = { viewModel.restartWifiDirectHostGroup() }
                         )
                     }
                 }

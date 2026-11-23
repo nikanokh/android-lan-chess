@@ -9,16 +9,15 @@ import org.junit.Test
 class ExampleUnitTest {
 
     @Test
-    fun timeControlPresets_containAllElevenRequiredControls() {
-        assertEquals(11, TimeControl.AllPresets.size)
+    fun timeControlPresets_containAllRequiredControlsIncludingClassical() {
+        assertEquals(16, TimeControl.AllPresets.size)
         val ids = TimeControl.AllPresets.map { it.id }
-        assertEquals(
-            listOf(
-                "unlimited", "1+0", "2+1", "3+0", "3+2",
-                "5+0", "5+3", "10+0", "10+5", "15+10", "30+0"
-            ),
-            ids
+        val originalRequired = listOf(
+            "unlimited", "1+0", "2+1", "3+0", "3+2",
+            "5+0", "5+3", "10+0", "10+5", "15+10", "30+0"
         )
+        assertTrue(ids.containsAll(originalRequired))
+        assertTrue(ids.containsAll(listOf("1+1", "30+20", "45+15", "60+0", "60+30")))
     }
 
     @Test

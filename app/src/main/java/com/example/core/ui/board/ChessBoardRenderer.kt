@@ -223,8 +223,53 @@ internal object ChessBoardRenderer {
         }
     }
 
+    /**
+     * Exact normalized visible alpha bounds measured on the 150x150 piece PNG assets.
+     * Queen is centered strictly vertically inside the square, and every other piece's
+     * visible base is aligned strictly to the Queen's baseline.
+     */
+    data class PieceSpriteMetrics(
+        val top: Float,
+        val bottom: Float,
+        val centerX: Float
+    )
+
+    data class PieceDrawRect(
+        val left: Float,
+        val top: Float,
+        val size: Float
+    )
+
+    const val BASE_PIECE_SCALE: Float = 0.97f
+
+    fun spriteMetricsFor(pieceType: PieceType): PieceSpriteMetrics = when (pieceType) {
+        PieceType.QUEEN -> PieceSpriteMetrics(top = 16f / 150f, bottom = 136f / 150f, centerX = 75.5f / 150f)
+        PieceType.KING -> PieceSpriteMetrics(top = 11f / 150f, bottom = 136f / 150f, centerX = 75.5f / 150f)
+        PieceType.BISHOP -> PieceSpriteMetrics(top = 12f / 150f, bottom = 136f / 150f, centerX = 74.5f / 150f)
+        PieceType.KNIGHT -> PieceSpriteMetrics(top = 15f / 150f, bottom = 136f / 150f, centerX = 73.0f / 150f)
+        PieceType.ROOK -> PieceSpriteMetrics(top = 24f / 150f, bottom = 136f / 150f, centerX = 75.5f / 150f)
+        PieceType.PAWN -> PieceSpriteMetrics(top = 33f / 150f, bottom = 136f / 150f, centerX = 75.0f / 150f)
+    }
+
+    fun computePieceDrawRect(
+        pieceType: PieceType,
+        center: Offset,
+        squareSize: Float,
+        scale: Float = 1f
+    ): PieceDrawRect {
+        val drawDim = (squareSize * BASE_PIECE_SCALE * scale).coerceAtLeast(1f)
+        val queenMetrics = spriteMetricsFor(PieceType.QUEEN)
+        val pieceMetrics = spriteMetricsFor(pieceType)
+        val queenHalfVisibleHeight = ((queenMetrics.bottom - queenMetrics.top) * 0.5f) * drawDim
+        val queenBaselineY = center.y + queenHalfVisibleHeight
+        val top = queenBaselineY - pieceMetrics.bottom * drawDim
+        val left = center.x - pieceMetrics.centerX * drawDim
+        return PieceDrawRect(left = left, top = top, size = drawDim)
+    }
+
     fun DrawScope.drawPieceAtCenter(
         bitmap: ImageBitmap,
+        pieceType: PieceType,
         center: Offset,
         squareSize: Float,
         scale: Float = 1f,
@@ -232,9 +277,15 @@ internal object ChessBoardRenderer {
         drawShadow: Boolean = false,
         colorFilter: ColorFilter? = null
     ) {
-        val drawDim = (squareSize * 0.90f * scale).roundToInt().coerceAtLeast(1)
-        val left = (center.x - drawDim / 2f).roundToInt()
-        val top = (center.y - drawDim / 2f).roundToInt()
+        val rect = computePieceDrawRect(
+            pieceType = pieceType,
+            center = center,
+            squareSize = squareSize,
+            scale = scale
+        )
+        val drawDim = rect.size.roundToInt().coerceAtLeast(1)
+        val left = rect.left.roundToInt()
+        val top = rect.top.roundToInt()
 
         if (drawShadow) {
             drawCircle(

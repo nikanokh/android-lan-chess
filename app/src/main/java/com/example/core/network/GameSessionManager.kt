@@ -105,6 +105,7 @@ data class GameSessionState(
 @Singleton
 class GameSessionManager @Inject constructor(
     private val lanDiscoveryManager: LanDiscoveryManager,
+    private val wifiDirectManager: WifiDirectManager,
     private val connectionStateManager: ConnectionStateManager,
     private val timeProvider: MonotonicTimeProvider
 ) : NetworkConnectionManager {
@@ -121,12 +122,17 @@ class GameSessionManager @Inject constructor(
 
     private var activeServer: LocalGameServer? = null
     private var activeClient: WebSocketClient? = null
+    private var lastHostAdvertisement: LanServiceAdvertisement? = null
+    private var pendingWifiDirectPlayerName: String = "Игрок"
     private var serverEventsJob: Job? = null
     private var clientMessagesJob: Job? = null
     private var clientTransportJob: Job? = null
 
     private val _sessionState = MutableStateFlow(GameSessionState())
     val sessionState: StateFlow<GameSessionState> = _sessionState.asStateFlow()
+
+    val wifiDirectState: StateFlow<WifiDirectState>
+        get() = wifiDirectManager.state
 
     override val connectionState: StateFlow<ConnectionState>
         get() = connectionStateManager.connectionState
@@ -142,6 +148,25 @@ class GameSessionManager @Inject constructor(
         connectionStateManager.clearDiscoveredRooms()
         connectionStateManager.setConnectionState(ConnectionState.Discovering(mode))
 
+        if (mode == ConnectionType.WIFI_DIRECT) {
+            lanDiscoveryManager.stopDiscovery()
+            wifiDirectManager.startDiscovery { hostIp, record ->
+                if (record != null) {
+                    scope.launch {
+                        connectByIp(
+                            host = hostIp,
+                            port = record.port,
+                            roomSecretOrCode = record.roomSecret.ifBlank { record.roomCode },
+                            playerName = pendingWifiDirectPlayerName,
+                            connectionType = ConnectionType.WIFI_DIRECT
+                        )
+                    }
+                }
+            }
+            return
+        }
+
+        wifiDirectManager.stopDiscovery()
         lanDiscoveryManager.startDiscovery(
             mode = mode,
             onRoomFound = { room ->
@@ -159,6 +184,7 @@ class GameSessionManager @Inject constructor(
 
     override suspend fun stopDiscovery() {
         lanDiscoveryManager.stopDiscovery()
+        wifiDirectManager.stopDiscovery()
         if (connectionStateManager.connectionState.value is ConnectionState.Discovering) {
             connectionStateManager.setConnectionState(ConnectionState.Idle)
         }
@@ -255,20 +281,32 @@ class GameSessionManager @Inject constructor(
                 }
             }
 
+            val advertisement = LanServiceAdvertisement(
+                roomId = config.roomId,
+                roomCode = config.roomCode,
+                hostName = resolvedHostName,
+                timeControlId = timeControl.id,
+                timeControlLabel = if (timeControl.isUnlimited) "Без таймера" else timeControl.label,
+                connectedPlayers = 1,
+                roomSecret = config.roomSecret,
+                port = boundPort
+            )
+            lastHostAdvertisement = advertisement
+
+            if (connectionType == ConnectionType.WIFI_DIRECT) {
+                wifiDirectManager.startHostGroup(advertisement) { groupOwnerIp ->
+                    connectionStateManager.setLocalIpAddress(groupOwnerIp)
+                    _sessionState.update { it.copy(hostAddress = groupOwnerIp) }
+                }
+            }
+
             lanDiscoveryManager.registerService(
-                advertisement = LanServiceAdvertisement(
-                    roomId = config.roomId,
-                    roomCode = config.roomCode,
-                    hostName = resolvedHostName,
-                    timeControlId = timeControl.id,
-                    timeControlLabel = if (timeControl.isUnlimited) "Без таймера" else timeControl.label,
-                    connectedPlayers = 1,
-                    roomSecret = config.roomSecret,
-                    port = boundPort
-                ),
+                advertisement = advertisement,
                 onError = { errorMsg ->
                     // Room server still remains reachable by IP:port even if mDNS fails on restrictive routers
-                    _sessionState.update { it.copy(lastError = errorMsg) }
+                    if (connectionType != ConnectionType.WIFI_DIRECT) {
+                        _sessionState.update { it.copy(lastError = errorMsg) }
+                    }
                 }
             )
 
@@ -313,12 +351,46 @@ class GameSessionManager @Inject constructor(
 
     fun refreshLocalNetworkAddress() {
         val current = _sessionState.value
-        val resolved = HotspotNetworkHelper.resolveHostIpv4(
-            preferHotspotInterface = current.connectionType == ConnectionType.HOTSPOT
-        ) ?: lanDiscoveryManager.resolveLocalIpv4Address()
+        val resolved = if (current.connectionType == ConnectionType.WIFI_DIRECT) {
+            wifiDirectManager.state.value.groupOwnerAddress
+                ?: HotspotNetworkHelper.resolveHostIpv4(preferHotspotInterface = true)
+        } else {
+            HotspotNetworkHelper.resolveHostIpv4(
+                preferHotspotInterface = current.connectionType == ConnectionType.HOTSPOT
+            )
+        } ?: lanDiscoveryManager.resolveLocalIpv4Address()
         connectionStateManager.setLocalIpAddress(resolved)
         if (current.role == SessionRole.HOST && !resolved.isNullOrBlank()) {
             _sessionState.update { it.copy(hostAddress = resolved) }
+        }
+    }
+
+    fun refreshWifiDirectPermissions(): Boolean = wifiDirectManager.refreshPermissionState()
+
+    fun restartWifiDirectHostGroup() {
+        val ad = lastHostAdvertisement ?: return
+        wifiDirectManager.startHostGroup(ad) { groupOwnerIp ->
+            connectionStateManager.setLocalIpAddress(groupOwnerIp)
+            _sessionState.update { it.copy(hostAddress = groupOwnerIp) }
+        }
+    }
+
+    fun connectToWifiDirectPeer(peer: WifiDirectPeer, playerName: String) {
+        pendingWifiDirectPlayerName = playerName.trim().ifBlank { "Игрок" }
+        val p2pState = wifiDirectManager.state.value
+        val record = peer.serviceRecord
+        if (p2pState.groupFormed && !p2pState.groupOwnerAddress.isNullOrBlank() && record != null) {
+            scope.launch {
+                connectByIp(
+                    host = p2pState.groupOwnerAddress,
+                    port = record.port,
+                    roomSecretOrCode = record.roomSecret.ifBlank { record.roomCode },
+                    playerName = pendingWifiDirectPlayerName,
+                    connectionType = ConnectionType.WIFI_DIRECT
+                )
+            }
+        } else {
+            wifiDirectManager.connectToPeer(peer.deviceAddress)
         }
     }
 
@@ -1009,6 +1081,8 @@ class GameSessionManager @Inject constructor(
         clientTransportJob = null
 
         lanDiscoveryManager.releaseAll()
+        wifiDirectManager.releaseSession()
+        lastHostAdvertisement = null
 
         val server = activeServer
         activeServer = null

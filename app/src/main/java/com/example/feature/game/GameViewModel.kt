@@ -2,6 +2,9 @@ package com.example.feature.game
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.core.audio.ChessSoundEffect
+import com.example.core.audio.ChessSoundPlayer
+import com.example.core.audio.ChessSoundSelector
 import com.example.core.chess.ChessClock
 import com.example.core.chess.ChessEngine
 import com.example.core.chess.ChessPositionSnapshot
@@ -11,6 +14,7 @@ import com.example.core.chess.EngineMoveResult
 import com.example.core.chess.MonotonicTimeProvider
 import com.example.core.chess.PgnMetadata
 import com.example.core.chess.PremoveCalculator
+import com.example.core.network.ConnectionType
 import com.example.core.network.GameSessionManager
 import com.example.core.network.GameSessionState
 import com.example.core.ui.board.BoardMoveAnimation
@@ -19,8 +23,11 @@ import com.example.core.ui.board.BoardSquare
 import com.example.core.ui.board.ChessBoardState
 import com.example.core.ui.board.PieceType
 import com.example.domain.model.AppSettings
+import com.example.domain.model.CompletedGameRecord
+import com.example.domain.model.CompletedMoveRecord
 import com.example.domain.model.PieceColor
 import com.example.domain.model.TimeControl
+import com.example.domain.repository.GameRepository
 import com.example.domain.usecase.ObserveSettingsUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -33,6 +40,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.util.UUID
 import javax.inject.Inject
 
 @HiltViewModel
@@ -41,6 +49,8 @@ class GameViewModel private constructor(
     private val timeProvider: MonotonicTimeProvider,
     observeSettingsUseCase: ObserveSettingsUseCase,
     private val gameSessionManager: GameSessionManager?,
+    private val gameRepository: GameRepository?,
+    private val soundPlayer: ChessSoundPlayer?,
     @Suppress("UNUSED_PARAMETER") internalMarker: Unit
 ) : ViewModel() {
 
@@ -49,17 +59,26 @@ class GameViewModel private constructor(
         chessEngine: ChessEngine,
         timeProvider: MonotonicTimeProvider,
         observeSettingsUseCase: ObserveSettingsUseCase,
-        gameSessionManager: GameSessionManager
-    ) : this(chessEngine, timeProvider, observeSettingsUseCase, gameSessionManager, Unit)
+        gameSessionManager: GameSessionManager,
+        gameRepository: GameRepository,
+        soundPlayer: ChessSoundPlayer
+    ) : this(chessEngine, timeProvider, observeSettingsUseCase, gameSessionManager, gameRepository, soundPlayer, Unit)
 
     constructor(
         chessEngine: ChessEngine,
         timeProvider: MonotonicTimeProvider,
-        observeSettingsUseCase: ObserveSettingsUseCase
-    ) : this(chessEngine, timeProvider, observeSettingsUseCase, null, Unit)
+        observeSettingsUseCase: ObserveSettingsUseCase,
+        gameRepository: GameRepository? = null,
+        soundPlayer: ChessSoundPlayer? = null
+    ) : this(chessEngine, timeProvider, observeSettingsUseCase, null, gameRepository, soundPlayer, Unit)
 
     private var chessClock = ChessClock(TimeControl.RAPID_10_0, timeProvider)
     private var initializedSessionKey: String? = null
+    private var currentGameUuid: String = UUID.randomUUID().toString()
+    private var currentGameCreatedAtMs: Long = System.currentTimeMillis()
+    private var sessionPlayerName: String = ""
+    private val savedGameUuids = mutableSetOf<String>()
+    private val tenSecondsWarnedColors = mutableSetOf<PieceColor>()
     private var clockTickerJob: Job? = null
     private var lanObserverJob: Job? = null
     private var isLanMode: Boolean = false
@@ -69,9 +88,23 @@ class GameViewModel private constructor(
     private var versionCounter = 0L
     private var lastActionElapsedMs = 0L
 
+    private fun playSound(effect: ChessSoundEffect) {
+        if (settings.value.soundEnabled) {
+            soundPlayer?.play(effect)
+        }
+    }
+
+    fun onInvalidDrop(@Suppress("UNUSED_PARAMETER") from: BoardSquare, @Suppress("UNUSED_PARAMETER") droppedOn: BoardSquare?) {
+        playSound(ChessSoundEffect.ILLEGAL)
+    }
+
+    fun onBoardFlipped() {
+        playSound(ChessSoundEffect.CLICK)
+    }
+
     val settings: StateFlow<AppSettings> = observeSettingsUseCase().stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
+        started = SharingStarted.Eagerly,
         initialValue = AppSettings()
     )
 
@@ -88,8 +121,12 @@ class GameViewModel private constructor(
     fun initializeSession(
         timeControlId: String,
         playerSide: PieceColor = PieceColor.WHITE,
-        isLanMatch: Boolean = false
+        isLanMatch: Boolean = false,
+        playerName: String = ""
     ) {
+        if (playerName.isNotBlank()) {
+            sessionPlayerName = playerName.trim()
+        }
         val key = "$timeControlId:${playerSide.name}:$isLanMatch"
         if (initializedSessionKey == key) return
         initializedSessionKey = key
@@ -97,6 +134,7 @@ class GameViewModel private constructor(
         val manager = gameSessionManager
         if (isLanMatch && manager != null && manager.sessionState.value.isActiveLanSession) {
             isLanMode = true
+            currentGameCreatedAtMs = System.currentTimeMillis()
             startLanObservation(manager)
         } else {
             isLanMode = false
@@ -198,7 +236,10 @@ class GameViewModel private constructor(
         if (isLanMode) {
             val manager = gameSessionManager ?: return false
             val legalTargets = manager.legalTargetsFrom(from)
-            if (legalTargets.none { it.square == to }) return false
+            if (legalTargets.none { it.square == to }) {
+                if (!fromDrag) playSound(ChessSoundEffect.ILLEGAL)
+                return false
+            }
 
             if (manager.isPromotionMove(from, to)) {
                 _uiState.value = current.copy(
@@ -257,7 +298,10 @@ class GameViewModel private constructor(
                 )
                 true
             }
-            is EngineMoveResult.Illegal -> false
+            is EngineMoveResult.Illegal -> {
+                if (!fromDrag) playSound(ChessSoundEffect.ILLEGAL)
+                false
+            }
         }
     }
 
@@ -269,6 +313,7 @@ class GameViewModel private constructor(
     ): Boolean {
         val current = _uiState.value
         if (!PremoveCalculator.isPremoveTargetValid(from, to, piece)) {
+            if (!fromDrag) playSound(ChessSoundEffect.ILLEGAL)
             val nextPremove = current.queuedPremove?.takeIf { it.piece.color != piece.color }
             _uiState.value = current.copy(
                 queuedPremove = nextPremove,
@@ -310,6 +355,7 @@ class GameViewModel private constructor(
                 queuedPremove = premove
             )
         )
+        playSound(ChessSoundEffect.PREMOVE)
         return true
     }
 
@@ -358,6 +404,7 @@ class GameViewModel private constructor(
                     )
                 )
             }
+            playSound(ChessSoundEffect.PREMOVE)
             return
         }
 
@@ -420,6 +467,7 @@ class GameViewModel private constructor(
                 materialBalance = GameHistoryFormatter.computeMaterialBalance(historicalSnapshot.pieces)
             )
         }
+        playSound(ChessSoundEffect.CLICK)
     }
 
     fun stepHistoryBackward() {
@@ -464,6 +512,7 @@ class GameViewModel private constructor(
                 materialBalance = GameHistoryFormatter.computeMaterialBalance(liveSnapshot.pieces)
             )
         }
+        playSound(ChessSoundEffect.CLICK)
     }
 
     // ---- Draw offer state machine (NONE -> SENT / RECEIVED -> ACCEPTED / DECLINED) ----
@@ -488,6 +537,7 @@ class GameViewModel private constructor(
                 drawOfferedBy = it.sideToMove
             )
         }
+        playSound(ChessSoundEffect.DRAW_OFFER)
     }
 
     /**
@@ -502,6 +552,7 @@ class GameViewModel private constructor(
                 drawOfferedBy = fromColor
             )
         }
+        playSound(ChessSoundEffect.DRAW_OFFER)
     }
 
     fun acceptDraw() {
@@ -532,6 +583,8 @@ class GameViewModel private constructor(
             drawOfferedBy = current.drawOfferedBy,
             showGameOverDialog = true
         )
+        playSound(ChessSoundEffect.GAME_DRAW)
+        persistLocalGameIfFinished(live, current.timeControl, current.playerSide)
     }
 
     fun declineDraw() {
@@ -595,6 +648,10 @@ class GameViewModel private constructor(
             playerSide = current.playerSide,
             showGameOverDialog = true
         )
+        live.outcome?.let { outcome ->
+            playSound(ChessSoundSelector.selectGameOverSound(outcome.result, current.playerSide))
+        }
+        persistLocalGameIfFinished(live, current.timeControl, current.playerSide)
     }
 
     // ---- Utility actions ----
@@ -627,6 +684,9 @@ class GameViewModel private constructor(
                 playerSide = current.playerSide,
                 showGameOverDialog = finalLive.isGameOver
             )
+            if (finalLive.isGameOver) {
+                persistLocalGameIfFinished(finalLive, current.timeControl, current.playerSide)
+            }
         }
     }
 
@@ -669,6 +729,7 @@ class GameViewModel private constructor(
         if (isLanMode) {
             val manager = gameSessionManager ?: return
             val liveClock = manager.liveClockSnapshot()
+            checkTenSecondsWarning(liveClock, current.timeControl)
             _uiState.update { it.copy(clock = liveClock) }
             return
         }
@@ -677,12 +738,28 @@ class GameViewModel private constructor(
         if (snap.isRunning && snap.activeColor != current.sideToMove) {
             snap = chessClock.switchActiveSide(current.sideToMove)
         }
+        checkTenSecondsWarning(snap, current.timeControl)
         _uiState.update { it.copy(clock = snap) }
+    }
+
+    private fun checkTenSecondsWarning(clockSnap: ClockSnapshot, timeControl: TimeControl) {
+        if (timeControl.isUnlimited || !clockSnap.isRunning) return
+        val activeColor = clockSnap.activeColor ?: return
+        val remainingMs = clockSnap.remainingFor(activeColor)
+        if (remainingMs in 1L..TEN_SECONDS_WARNING_MS) {
+            if (tenSecondsWarnedColors.add(activeColor)) {
+                playSound(ChessSoundEffect.TEN_SECONDS)
+            }
+        } else if (remainingMs > TEN_SECONDS_WARNING_MS) {
+            tenSecondsWarnedColors.remove(activeColor)
+        }
     }
 
     private fun startLanObservation(manager: GameSessionManager) {
         lanObserverJob?.cancel()
         lastAppliedLanMoveId = 0L
+        tenSecondsWarnedColors.clear()
+        playSound(ChessSoundEffect.GAME_START)
         lanObserverJob = viewModelScope.launch {
             manager.sessionState.collect { session ->
                 applyLanSessionState(manager, session)
@@ -829,10 +906,37 @@ class GameViewModel private constructor(
             showGameOverDialog = showGameOverNow,
             pgnPreview = previous.pgnPreview
         )
+        val justEnded = snapshot.isGameOver && !wasGameOver
+        val drawOfferAppeared = !snapshot.isGameOver &&
+            (session.drawOfferState == DrawOfferState.RECEIVED || session.drawOfferState == DrawOfferState.SENT) &&
+            session.drawOfferState != previous.drawOfferState
+
+        if (justEnded) {
+            snapshot.outcome?.let { outcome ->
+                playSound(ChessSoundSelector.selectGameOverSound(outcome.result, session.localColor))
+            }
+        } else if (newAnimatedMove != null) {
+            val isOpponentMove = newAnimatedMove.color != session.localColor
+            playSound(
+                ChessSoundSelector.selectMoveSound(
+                    move = newAnimatedMove,
+                    isOpponentMove = isOpponentMove
+                )
+            )
+        } else if (drawOfferAppeared) {
+            playSound(ChessSoundEffect.DRAW_OFFER)
+        }
+
+        if (snapshot.isGameOver) {
+            persistLanGameIfFinished(manager, session, snapshot)
+        }
     }
 
     private fun startNewGameInternal(control: TimeControl, playerSide: PieceColor) {
         stopClockTicker()
+        currentGameUuid = UUID.randomUUID().toString()
+        currentGameCreatedAtMs = System.currentTimeMillis()
+        tenSecondsWarnedColors.clear()
         chessEngine.reset()
         chessClock = ChessClock(control, timeProvider)
         _uiState.value = buildLiveUiState(
@@ -841,6 +945,7 @@ class GameViewModel private constructor(
             timeControl = control,
             playerSide = playerSide
         )
+        playSound(ChessSoundEffect.GAME_START)
     }
 
     private fun handleMoveCommitted(
@@ -857,6 +962,7 @@ class GameViewModel private constructor(
         var displayedMove = move
         var skipSlide = fromDrag
 
+        var premoveExecuted = false
         // Attempt automatic execution of queued premove if it belongs to the new sideToMove
         if (!finalSnapshot.isGameOver &&
             pendingPremove != null &&
@@ -872,6 +978,7 @@ class GameViewModel private constructor(
                 displayedMove = premoveResult.move
                 // Always animate auto-executed premove smoothly across the board
                 skipSlide = false
+                premoveExecuted = true
             }
         }
 
@@ -887,6 +994,21 @@ class GameViewModel private constructor(
             drawOfferedBy = null,
             showGameOverDialog = finalSnapshot.isGameOver
         )
+        if (finalSnapshot.isGameOver) {
+            finalSnapshot.outcome?.let { outcome ->
+                playSound(ChessSoundSelector.selectGameOverSound(outcome.result, previousState.playerSide))
+            }
+            persistLocalGameIfFinished(finalSnapshot, currentControl, previousState.playerSide)
+        } else {
+            val isOpponentMove = displayedMove.color != previousState.playerSide
+            playSound(
+                ChessSoundSelector.selectMoveSound(
+                    move = displayedMove,
+                    isOpponentMove = isOpponentMove,
+                    isPremoveExecution = premoveExecuted
+                )
+            )
+        }
     }
 
     private fun executeQueuedPremove(premove: BoardPremove): EngineMoveResult {
@@ -938,7 +1060,111 @@ class GameViewModel private constructor(
                 showGameOverDialog = true
             )
         }
+        live.outcome?.let { outcome ->
+            playSound(ChessSoundSelector.selectGameOverSound(outcome.result, _uiState.value.playerSide))
+        }
+        persistLocalGameIfFinished(live, _uiState.value.timeControl, _uiState.value.playerSide)
         return true
+    }
+
+    private fun persistLocalGameIfFinished(
+        snapshot: ChessPositionSnapshot,
+        timeControl: TimeControl,
+        playerSide: PieceColor
+    ) {
+        val repo = gameRepository ?: return
+        val outcome = snapshot.outcome ?: return
+        val uuid = currentGameUuid
+        if (!savedGameUuids.add(uuid)) return
+
+        val localName = sessionPlayerName.ifBlank {
+            settings.value.playerName.ifBlank { "Игрок" }
+        }
+        val opponentName = "Соперник"
+        val whitePlayer = if (playerSide == PieceColor.WHITE) localName else opponentName
+        val blackPlayer = if (playerSide == PieceColor.BLACK) localName else opponentName
+        val timeLabel = if (timeControl.isUnlimited) "Без времени" else timeControl.label
+        val pgn = chessEngine.exportPgn(
+            PgnMetadata(
+                whitePlayer = whitePlayer,
+                blackPlayer = blackPlayer,
+                timeControl = timeLabel
+            )
+        )
+        val now = System.currentTimeMillis()
+        val record = CompletedGameRecord(
+            gameUuid = uuid,
+            createdAt = currentGameCreatedAtMs,
+            finishedAt = now,
+            whitePlayer = whitePlayer,
+            blackPlayer = blackPlayer,
+            result = outcome.result,
+            timeControlLabel = timeLabel,
+            initialFen = INITIAL_STANDARD_FEN,
+            finalFen = snapshot.fen,
+            pgn = pgn,
+            connectionType = ConnectionType.WIFI_LAN,
+            moves = snapshot.moveHistory.map { move ->
+                CompletedMoveRecord(
+                    moveNumber = move.moveNumber,
+                    color = move.color,
+                    san = move.san,
+                    uci = move.uci,
+                    fenAfter = move.fenAfter,
+                    timestamp = now
+                )
+            }
+        )
+        viewModelScope.launch {
+            runCatching { repo.saveCompletedGame(record) }
+        }
+    }
+
+    private fun persistLanGameIfFinished(
+        manager: GameSessionManager,
+        session: GameSessionState,
+        snapshot: ChessPositionSnapshot
+    ) {
+        val repo = gameRepository ?: return
+        val outcome = snapshot.outcome ?: return
+        val uuid = session.gameUuid.ifBlank { currentGameUuid }
+        if (!savedGameUuids.add(uuid)) return
+
+        val localName = session.localPlayerName.ifBlank {
+            sessionPlayerName.ifBlank { settings.value.playerName.ifBlank { "Игрок" } }
+        }
+        val remoteName = session.opponentName?.takeIf { it.isNotBlank() } ?: "Соперник"
+        val whitePlayer = if (session.localColor == PieceColor.WHITE) localName else remoteName
+        val blackPlayer = if (session.localColor == PieceColor.BLACK) localName else remoteName
+        val timeLabel = if (session.timeControl.isUnlimited) "Без времени" else session.timeControl.label
+        val pgn = manager.exportPgn(whitePlayer, blackPlayer)
+        val now = System.currentTimeMillis()
+        val record = CompletedGameRecord(
+            gameUuid = uuid,
+            createdAt = currentGameCreatedAtMs,
+            finishedAt = now,
+            whitePlayer = whitePlayer,
+            blackPlayer = blackPlayer,
+            result = outcome.result,
+            timeControlLabel = timeLabel,
+            initialFen = INITIAL_STANDARD_FEN,
+            finalFen = snapshot.fen,
+            pgn = pgn,
+            connectionType = session.connectionType,
+            moves = snapshot.moveHistory.map { move ->
+                CompletedMoveRecord(
+                    moveNumber = move.moveNumber,
+                    color = move.color,
+                    san = move.san,
+                    uci = move.uci,
+                    fenAfter = move.fenAfter,
+                    timestamp = now
+                )
+            }
+        )
+        viewModelScope.launch {
+            runCatching { repo.saveCompletedGame(record) }
+        }
     }
 
     private fun ensureClockTickerRunning() {
@@ -1031,5 +1257,8 @@ class GameViewModel private constructor(
     companion object {
         private const val CLOCK_POLL_INTERVAL_MS = 100L
         private const val ACTION_DEBOUNCE_MS = 350L
+        private const val TEN_SECONDS_WARNING_MS = 10_000L
+        private const val INITIAL_STANDARD_FEN =
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
     }
 }

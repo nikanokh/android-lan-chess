@@ -482,6 +482,7 @@ fun ChessBoard(
                         pieceCache[previewPiece]?.let { ghostBitmap ->
                             drawPieceAtCenter(
                                 bitmap = ghostBitmap,
+                                pieceType = previewPiece.type,
                                 center = BoardCoordinates.squareCenter(premove.to, squareSize, flipped),
                                 squareSize = squareSize,
                                 alpha = 0.36f,
@@ -504,6 +505,7 @@ fun ChessBoard(
                     val pieceScale = if (square == state.selectedSquare) selectedPieceScale else 1f
                     drawPieceAtCenter(
                         bitmap = bitmap,
+                        pieceType = piece.type,
                         center = center,
                         squareSize = squareSize,
                         scale = pieceScale,
@@ -517,6 +519,7 @@ fun ChessBoard(
                     if (bitmap != null) {
                         drawPieceAtCenter(
                             bitmap = bitmap,
+                            pieceType = dropLock.piece.type,
                             center = BoardCoordinates.squareCenter(dropLock.to, squareSize, flipped),
                             squareSize = squareSize,
                             colorFilter = pieceCache.colorFilter
@@ -531,6 +534,7 @@ fun ChessBoard(
                         pieceCache[captured]?.let { capturedBitmap ->
                             drawPieceAtCenter(
                                 bitmap = capturedBitmap,
+                                pieceType = captured.type,
                                 center = BoardCoordinates.squareCenter(moveAnim.capturedSquare, squareSize, flipped),
                                 squareSize = squareSize,
                                 alpha = (1f - animProgress).coerceIn(0f, 1f),
@@ -544,6 +548,7 @@ fun ChessBoard(
                         val endCenter = BoardCoordinates.squareCenter(moveAnim.to, squareSize, flipped)
                         drawPieceAtCenter(
                             bitmap = movingBitmap,
+                            pieceType = moveAnim.piece.type,
                             center = lerp(startCenter, endCenter, animProgress),
                             squareSize = squareSize,
                             scale = 1.04f,
@@ -563,6 +568,7 @@ fun ChessBoard(
                         }
                         drawPieceAtCenter(
                             bitmap = bitmap,
+                            pieceType = returning.piece.type,
                             center = lerp(returning.startVisualCenter, returning.targetCenter, t),
                             squareSize = squareSize,
                             scale = 1.22f - 0.22f * t,
@@ -577,6 +583,7 @@ fun ChessBoard(
                     pieceCache[drag.piece]?.let { bitmap ->
                         drawPieceAtCenter(
                             bitmap = bitmap,
+                            pieceType = drag.piece.type,
                             center = Offset(
                                 x = drag.pointerOffset.x,
                                 y = drag.pointerOffset.y - squareSize * 0.32f
