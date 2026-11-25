@@ -55,6 +55,7 @@ class HistoryAndSettingsPersistenceTest {
         override suspend fun updateHighlightLastMove(enabled: Boolean) { flow.value = flow.value.copy(highlightLastMove = enabled) }
         override suspend fun updateConfirmResign(enabled: Boolean) { flow.value = flow.value.copy(confirmResign = enabled) }
         override suspend fun updateVibrationEnabled(enabled: Boolean) { flow.value = flow.value.copy(vibrationEnabled = enabled) }
+        override suspend fun updatePremovesEnabled(enabled: Boolean) { flow.value = flow.value.copy(premovesEnabled = enabled) }
     }
 
     private class FakeClock(var nowMs: Long = 10_000L) : MonotonicTimeProvider {

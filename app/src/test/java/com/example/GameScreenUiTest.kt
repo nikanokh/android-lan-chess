@@ -50,6 +50,7 @@ private class FakeSettingsRepository(initial: AppSettings = AppSettings()) : Set
     override suspend fun updateHighlightLastMove(enabled: Boolean) { state.value = state.value.copy(highlightLastMove = enabled) }
     override suspend fun updateConfirmResign(enabled: Boolean) { state.value = state.value.copy(confirmResign = enabled) }
     override suspend fun updateVibrationEnabled(enabled: Boolean) { state.value = state.value.copy(vibrationEnabled = enabled) }
+    override suspend fun updatePremovesEnabled(enabled: Boolean) { state.value = state.value.copy(premovesEnabled = enabled) }
 }
 
 private class TestElapsedClock(var nowMs: Long = 10_000L) : MonotonicTimeProvider {
@@ -65,7 +66,7 @@ class GameScreenUiTest {
 
     private fun createViewModel(
         clock: TestElapsedClock = TestElapsedClock(),
-        settings: AppSettings = AppSettings(confirmResign = true, animationEnabled = false)
+        settings: AppSettings = AppSettings(confirmResign = true, animationEnabled = false, premovesEnabled = true)
     ): GameViewModel {
         val repo = FakeSettingsRepository(settings)
         return GameViewModel(

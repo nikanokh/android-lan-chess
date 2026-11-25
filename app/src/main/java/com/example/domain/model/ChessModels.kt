@@ -163,7 +163,8 @@ data class AppSettings(
     val highlightLegalMoves: Boolean = true,
     val highlightLastMove: Boolean = true,
     val confirmResign: Boolean = true,
-    val vibrationEnabled: Boolean = true
+    val vibrationEnabled: Boolean = true,
+    val premovesEnabled: Boolean = false
 )
 
 @Immutable

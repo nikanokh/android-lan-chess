@@ -249,7 +249,7 @@ fun CompactMoveHistoryStrip(
     activeDisplayPly: Int,
     totalPlies: Int,
     isViewingHistory: Boolean,
-    queuedPremove: BoardPremove?,
+    queuedPremoves: List<BoardPremove>,
     onSelectPly: (Int) -> Unit,
     onStepBack: () -> Unit,
     onStepForward: () -> Unit,
@@ -260,6 +260,7 @@ fun CompactMoveHistoryStrip(
 ) {
     val colors = ChessTheme.colors
     val listState = rememberLazyListState()
+    val firstPremove = queuedPremoves.firstOrNull()
 
     // Keep the currently displayed ply scrolled into view without shifting any layout geometry
     LaunchedEffect(activeDisplayPly, movePairs.size) {
@@ -274,12 +275,12 @@ fun CompactMoveHistoryStrip(
 
     val containerColor = when {
         isViewingHistory -> colors.accentBlueContainer.copy(alpha = 0.45f)
-        queuedPremove != null -> colors.accentCoralContainer.copy(alpha = 0.45f)
+        firstPremove != null -> colors.accentCoralContainer.copy(alpha = 0.45f)
         else -> colors.backgroundSecondary
     }
     val borderColor = when {
         isViewingHistory -> colors.accentBlue.copy(alpha = 0.7f)
-        queuedPremove != null -> colors.accentCoral.copy(alpha = 0.7f)
+        firstPremove != null -> colors.accentCoral.copy(alpha = 0.7f)
         else -> colors.borderSubtle
     }
 
@@ -331,7 +332,7 @@ fun CompactMoveHistoryStrip(
                         )
                     }
                 }
-            } else if (queuedPremove != null) {
+            } else if (firstPremove != null) {
                 Surface(
                     onClick = onCancelPremove,
                     shape = RoundedCornerShape(7.dp),
@@ -346,12 +347,22 @@ fun CompactMoveHistoryStrip(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Text(
-                            text = stringResource(
+                        val badgeText = if (queuedPremoves.size > 1) {
+                            stringResource(
+                                R.string.game_premove_badge_multi,
+                                firstPremove.from.algebraic,
+                                firstPremove.to.algebraic,
+                                queuedPremoves.size - 1
+                            )
+                        } else {
+                            stringResource(
                                 R.string.game_premove_badge,
-                                queuedPremove.from.algebraic,
-                                queuedPremove.to.algebraic
-                            ),
+                                firstPremove.from.algebraic,
+                                firstPremove.to.algebraic
+                            )
+                        }
+                        Text(
+                            text = badgeText,
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontFamily = MonoFontFamily,
                                 fontWeight = FontWeight.Bold
@@ -801,7 +812,7 @@ fun DrawOfferBanner(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 6.dp),
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -812,24 +823,36 @@ fun DrawOfferBanner(
                 modifier = Modifier.weight(1f)
             )
             if (isActionable) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    TextButton(
+                Spacer(modifier = Modifier.width(8.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
                         onClick = onDeclineDraw,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                        modifier = Modifier.testTag("decline_draw_button")
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, colors.accentCoral.copy(alpha = 0.65f)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.accentCoral),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                        modifier = Modifier
+                            .height(36.dp)
+                            .testTag("decline_draw_button")
                     ) {
                         Text(
                             text = stringResource(R.string.game_action_decline),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = colors.accentCoral
+                            style = MaterialTheme.typography.labelMedium
                         )
                     }
                     Button(
                         onClick = onAcceptDraw,
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = colors.accentGreen),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = colors.accentGreen,
+                            contentColor = colors.textPrimary
+                        ),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                         modifier = Modifier
-                            .height(32.dp)
+                            .height(36.dp)
                             .testTag("accept_draw_button")
                     ) {
                         Text(

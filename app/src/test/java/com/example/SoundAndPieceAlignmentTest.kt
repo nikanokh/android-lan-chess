@@ -52,6 +52,7 @@ class SoundAndPieceAlignmentTest {
         override suspend fun updateHighlightLastMove(enabled: Boolean) { state.value = state.value.copy(highlightLastMove = enabled) }
         override suspend fun updateConfirmResign(enabled: Boolean) { state.value = state.value.copy(confirmResign = enabled) }
         override suspend fun updateVibrationEnabled(enabled: Boolean) { state.value = state.value.copy(vibrationEnabled = enabled) }
+        override suspend fun updatePremovesEnabled(enabled: Boolean) { state.value = state.value.copy(premovesEnabled = enabled) }
     }
 
     private class ManualClock(var nowMs: Long = 10_000L) : MonotonicTimeProvider {

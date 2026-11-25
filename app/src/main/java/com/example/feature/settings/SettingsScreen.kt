@@ -125,6 +125,10 @@ class SettingsViewModel @Inject constructor(
     fun onVibrationToggle(enabled: Boolean) {
         viewModelScope.launch { updateSettingsUseCase.setVibrationEnabled(enabled) }
     }
+
+    fun onPremovesToggle(enabled: Boolean) {
+        viewModelScope.launch { updateSettingsUseCase.setPremovesEnabled(enabled) }
+    }
 }
 
 @Composable
@@ -352,6 +356,13 @@ fun SettingsScreen(
                                 checked = settings.vibrationEnabled,
                                 onCheckedChange = viewModel::onVibrationToggle,
                                 testTag = "settings_toggle_vibration"
+                            )
+                            SettingsDivider()
+                            SettingsToggleRow(
+                                title = stringResource(R.string.settings_premoves),
+                                checked = settings.premovesEnabled,
+                                onCheckedChange = viewModel::onPremovesToggle,
+                                testTag = "settings_toggle_premoves"
                             )
                         }
                     }

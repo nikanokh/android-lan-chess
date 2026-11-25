@@ -43,7 +43,7 @@ import com.example.core.ui.board.ChessBoardRenderer.drawDragTargetHighlight
 import com.example.core.ui.board.ChessBoardRenderer.drawLastMoveHighlight
 import com.example.core.ui.board.ChessBoardRenderer.drawLegalTargets
 import com.example.core.ui.board.ChessBoardRenderer.drawPieceAtCenter
-import com.example.core.ui.board.ChessBoardRenderer.drawPremoveHighlight
+import com.example.core.ui.board.ChessBoardRenderer.drawPremoveHighlights
 import com.example.core.ui.board.ChessBoardRenderer.drawSelectedSquareHighlight
 import com.example.core.ui.board.ChessBoardRenderer.drawSquares
 import com.example.core.ui.theme.ChessMotion
@@ -343,17 +343,14 @@ fun ChessBoard(
 
                                 if (dropSquare != null && dropSquare != downSquare) {
                                     val preDropPieces = latestState.pieces
-                                    val isPremoveDrag = latestState.isPremoveSelection
                                     val accepted = latestOnMoveAttempt(downSquare, dropSquare, true)
                                     if (accepted) {
-                                        if (!isPremoveDrag) {
-                                            pendingDrop = PendingDropState(
-                                                from = downSquare,
-                                                to = dropSquare,
-                                                piece = pieceAtDown,
-                                                sourcePieces = preDropPieces
-                                            )
-                                        }
+                                        pendingDrop = PendingDropState(
+                                            from = downSquare,
+                                            to = dropSquare,
+                                            piece = pieceAtDown,
+                                            sourcePieces = preDropPieces
+                                        )
                                         activeDrag = null
                                     } else {
                                         activeDrag = null
@@ -412,9 +409,9 @@ fun ChessBoard(
                     )
                 }
 
-                // 2.5 Queued premove highlight (Chess.com coral-red from/to squares)
-                drawPremoveHighlight(
-                    premove = state.queuedPremove,
+                // 2.5 Queued premoves highlight (Chess.com coral-red from/to squares)
+                drawPremoveHighlights(
+                    premoves = state.queuedPremoves,
                     squareSize = squareSize,
                     colors = squareColors,
                     flipped = flipped
@@ -473,26 +470,7 @@ fun ChessBoard(
                     )
                 }
 
-                // 7.5 Translucent premove destination preview on empty target square
-                state.queuedPremove?.let { premove ->
-                    if (!state.pieces.containsKey(premove.to)) {
-                        val previewPiece = premove.promotion?.let { promo ->
-                            BoardPiece(type = promo, color = premove.piece.color)
-                        } ?: premove.piece
-                        pieceCache[previewPiece]?.let { ghostBitmap ->
-                            drawPieceAtCenter(
-                                bitmap = ghostBitmap,
-                                pieceType = previewPiece.type,
-                                center = BoardCoordinates.squareCenter(premove.to, squareSize, flipped),
-                                squareSize = squareSize,
-                                alpha = 0.36f,
-                                colorFilter = pieceCache.colorFilter
-                            )
-                        }
-                    }
-                }
-
-                // 8. Stationary pieces (strictly single-instance: exclude dragged, pending drop, snap-back, sliding)
+                // 8. Stationary pieces (including virtually positioned premove pieces)
                 val slidingTarget = if (moveAnim != null && animProgress < 1f) moveAnim.to else null
                 for ((square, piece) in state.pieces) {
                     if (square == drag?.originSquare) continue

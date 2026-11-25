@@ -45,4 +45,7 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override suspend fun updateVibrationEnabled(enabled: Boolean) =
         settingsDataStore.updateVibrationEnabled(enabled)
+
+    override suspend fun updatePremovesEnabled(enabled: Boolean) =
+        settingsDataStore.updatePremovesEnabled(enabled)
 }

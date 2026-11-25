@@ -197,6 +197,7 @@
     <string name="game_history_viewing_ply">Просмотр хода %1$d из %2$d</string>
     <string name="game_history_return_live">К партии</string>
     <string name="game_premove_badge">Премув %1$s→%2$s</string>
+    <string name="game_premove_badge_multi">Премув %1$s→%2$s (+%3$d)</string>
     <string name="cd_cancel_premove">Отменить премув</string>
     <string name="game_menu_title">Меню партии</string>
     <string name="game_pgn_title">Запись партии (PGN)</string>
@@ -249,6 +250,7 @@
     <string name="settings_last_move">Подсветка последнего хода</string>
     <string name="settings_confirm_resign">Подтверждение сдачи</string>
     <string name="settings_vibration">Вибрация</string>
+    <string name="settings_premoves">Премувы (предходы)</string>
     <string name="settings_saved_note">Все параметры сохраняются локально в DataStore</string>
     <string name="default_player_name">Игрок</string>
 

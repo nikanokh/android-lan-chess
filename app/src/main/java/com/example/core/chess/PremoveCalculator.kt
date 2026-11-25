@@ -1,10 +1,12 @@
 package com.example.core.chess
 
 import com.example.core.ui.board.BoardPiece
+import com.example.core.ui.board.BoardPremove
 import com.example.core.ui.board.BoardSquare
 import com.example.core.ui.board.LegalTarget
 import com.example.core.ui.board.PieceType
 import com.example.domain.model.PieceColor
+import kotlin.math.abs
 
 /**
  * Computes Chess.com-style pseudo-legal premove candidate targets for UI selection and queueing.
@@ -14,6 +16,44 @@ import com.example.domain.model.PieceColor
  * FIDE rules (pins, checks, captures, castling rights, en passant, etc.) and cancels illegal premoves.
  */
 object PremoveCalculator {
+
+    const val MAX_QUEUED_PREMOVES: Int = 8
+
+    fun applyVirtualPremoves(
+        basePieces: Map<BoardSquare, BoardPiece>,
+        premoves: List<BoardPremove>
+    ): Map<BoardSquare, BoardPiece> {
+        if (premoves.isEmpty()) return basePieces
+        val projected = LinkedHashMap(basePieces)
+        for (premove in premoves) {
+            val movingPiece = projected.remove(premove.from) ?: premove.piece
+            val placedPiece = premove.promotion?.let { promo ->
+                BoardPiece(type = promo, color = movingPiece.color)
+            } ?: movingPiece
+            projected[premove.to] = placedPiece
+
+            // Relocate rook virtually when king premoves castling so the visual preview matches reality
+            if (movingPiece.type == PieceType.KING && abs(premove.to.file - premove.from.file) == 2) {
+                val rank = premove.from.rank
+                if (premove.to.file == 6) {
+                    val rookFrom = BoardSquare(7, rank)
+                    val rook = projected[rookFrom]
+                    if (rook != null && rook.type == PieceType.ROOK && rook.color == movingPiece.color) {
+                        projected.remove(rookFrom)
+                        projected[BoardSquare(5, rank)] = rook
+                    }
+                } else if (premove.to.file == 2) {
+                    val rookFrom = BoardSquare(0, rank)
+                    val rook = projected[rookFrom]
+                    if (rook != null && rook.type == PieceType.ROOK && rook.color == movingPiece.color) {
+                        projected.remove(rookFrom)
+                        projected[BoardSquare(3, rank)] = rook
+                    }
+                }
+            }
+        }
+        return projected
+    }
 
     fun premoveTargetsFor(square: BoardSquare, piece: BoardPiece): List<LegalTarget> {
         val targets = mutableListOf<LegalTarget>()
