@@ -95,5 +95,30 @@ object ChessEngineModule {
     @Singleton
     fun provideMonotonicTimeProvider(): com.example.core.chess.MonotonicTimeProvider =
         com.example.core.chess.SystemMonotonicTimeProvider()
+
+    @Provides
+    @Singleton
+    fun providePrimaryStockfishClient(
+        @ApplicationContext context: Context
+    ): com.example.core.analysis.StockfishUciClient =
+        com.example.core.analysis.StockfishUciClient(
+            transport = com.example.core.analysis.WebViewStockfishTransport(context)
+        )
+
+    @Provides
+    @Singleton
+    @javax.inject.Named("repertoire")
+    fun provideRepertoireStockfishClient(
+        @ApplicationContext context: Context
+    ): com.example.core.analysis.StockfishUciClient =
+        com.example.core.analysis.StockfishUciClient(
+            transport = com.example.core.analysis.WebViewStockfishTransport(context)
+        )
+
+    @Provides
+    @Singleton
+    fun provideChessAnalysisEngine(
+        client: com.example.core.analysis.StockfishUciClient
+    ): com.example.core.chess.ChessAnalysisEngine = client
 }
 

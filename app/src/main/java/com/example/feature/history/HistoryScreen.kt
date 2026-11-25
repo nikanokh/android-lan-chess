@@ -2,6 +2,7 @@ package com.example.feature.history
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -65,6 +66,7 @@ class HistoryViewModel @Inject constructor(
 @Composable
 fun HistoryScreen(
     onNavigateBack: (() -> Unit)?,
+    onAnalyzeGame: (Long) -> Unit = {},
     viewModel: HistoryViewModel = hiltViewModel()
 ) {
     val games by viewModel.games.collectAsStateWithLifecycle()
@@ -136,7 +138,10 @@ fun HistoryScreen(
                     verticalArrangement = Arrangement.spacedBy(spacing.sm)
                 ) {
                     items(items = games, key = { it.id }) { game ->
-                        HistoryGameCard(game = game)
+                        HistoryGameCard(
+                            game = game,
+                            onAnalyzeClick = { onAnalyzeGame(game.id) }
+                        )
                     }
                 }
             }
@@ -145,7 +150,10 @@ fun HistoryScreen(
 }
 
 @Composable
-private fun HistoryGameCard(game: GameSummary) {
+private fun HistoryGameCard(
+    game: GameSummary,
+    onAnalyzeClick: () -> Unit
+) {
     val colors = ChessTheme.colors
     val resultLabel = when (game.result) {
         GameResult.WHITE_WIN -> "1–0"
@@ -154,7 +162,11 @@ private fun HistoryGameCard(game: GameSummary) {
         GameResult.IN_PROGRESS -> "…"
         GameResult.ABORTED -> "×"
     }
-    ChessSurfaceCard(modifier = Modifier.fillMaxWidth()) {
+    ChessSurfaceCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onAnalyzeClick)
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -173,16 +185,33 @@ private fun HistoryGameCard(game: GameSummary) {
                     color = colors.textSecondary
                 )
             }
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = colors.accentGreenContainer
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = resultLabel,
-                    style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
-                    color = colors.accentGreen,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                )
+                Surface(
+                    onClick = onAnalyzeClick,
+                    shape = RoundedCornerShape(8.dp),
+                    color = colors.accentBlueContainer
+                ) {
+                    Text(
+                        text = "Анализ",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = colors.accentBlue,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    )
+                }
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = colors.accentGreenContainer
+                ) {
+                    Text(
+                        text = resultLabel,
+                        style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
+                        color = colors.accentGreen,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    )
+                }
             }
         }
     }

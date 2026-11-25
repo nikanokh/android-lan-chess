@@ -225,7 +225,7 @@
 
     <!-- Analysis Screen -->
     <string name="analysis_title">Анализ партий</string>
-    <string name="analysis_subtitle">Интерфейс ChessAnalysisEngine подготовлен для интеграции Stockfish (Этап 7).</string>
+    <string name="analysis_subtitle">Офлайн Stockfish WASM, дерево вариантов, точность Lichess и анализ репертуара.</string>
     <string name="analysis_badges_title">Классификация ходов</string>
 
     <!-- Profile Screen -->

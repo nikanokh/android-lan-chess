@@ -44,6 +44,9 @@ sealed interface AppDestination {
     data object Analysis : AppDestination
 
     @Serializable
+    data class AnalysisForGame(val gameId: Long) : AppDestination
+
+    @Serializable
     data object Profile : AppDestination
 
     @Serializable

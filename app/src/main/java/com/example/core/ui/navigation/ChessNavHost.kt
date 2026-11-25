@@ -367,12 +367,23 @@ private fun ChessNavHost(
                     { navController.popBackStack() }
                 } else {
                     null
+                },
+                onAnalyzeGame = { gameId ->
+                    navController.navigate(AppDestination.AnalysisForGame(gameId))
                 }
             )
         }
 
         composable<AppDestination.Analysis> {
             AnalysisScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable<AppDestination.AnalysisForGame> { backStackEntry ->
+            val route = backStackEntry.toRoute<AppDestination.AnalysisForGame>()
+            AnalysisScreen(
+                initialGameId = route.gameId,
                 onNavigateBack = { navController.popBackStack() }
             )
         }
