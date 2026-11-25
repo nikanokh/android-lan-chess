@@ -17,4 +17,5 @@ interface SettingsRepository {
     suspend fun updateHighlightLastMove(enabled: Boolean)
     suspend fun updateConfirmResign(enabled: Boolean)
     suspend fun updateVibrationEnabled(enabled: Boolean)
+    suspend fun updatePremovesEnabled(enabled: Boolean)
 }

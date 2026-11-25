@@ -66,7 +66,8 @@ data class GameUiState(
     val moveHistory: List<EngineMove> = emptyList(),
     val movePairs: List<MoveHistoryPair> = emptyList(),
     val viewedPlyIndex: Int? = null,
-    val queuedPremove: BoardPremove? = null,
+    val queuedPremoves: List<BoardPremove> = emptyList(),
+    val premovesEnabled: Boolean = false,
     val clock: ClockSnapshot = ClockSnapshot(
         timeControl = TimeControl.RAPID_10_0,
         whiteRemainingMs = TimeControl.RAPID_10_0.initialSeconds * 1_000L,
@@ -84,10 +85,13 @@ data class GameUiState(
     val isGameOver: Boolean get() = outcome != null
     val isViewingHistory: Boolean get() = viewedPlyIndex != null && viewedPlyIndex < moveHistory.size
     val activeDisplayPly: Int get() = viewedPlyIndex ?: moveHistory.size
+    val queuedPremove: BoardPremove? get() = queuedPremoves.firstOrNull()
 
     fun canInteractWithPiece(piece: BoardPiece): Boolean {
         if (isGameOver || isViewingHistory) return false
-        return !restrictToLocalPlayer || piece.color == playerSide
+        if (restrictToLocalPlayer && piece.color != playerSide) return false
+        if (piece.color != sideToMove && !premovesEnabled) return false
+        return true
     }
 }
 

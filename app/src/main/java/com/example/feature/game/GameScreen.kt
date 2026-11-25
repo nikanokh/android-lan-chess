@@ -411,7 +411,7 @@ fun GameScreenContent(
                             activeDisplayPly = uiState.activeDisplayPly,
                             totalPlies = uiState.moveHistory.size,
                             isViewingHistory = uiState.isViewingHistory,
-                            queuedPremove = uiState.queuedPremove,
+                            queuedPremoves = uiState.queuedPremoves,
                             onSelectPly = onSelectPly,
                             onStepBack = onStepBack,
                             onStepForward = onStepForward,

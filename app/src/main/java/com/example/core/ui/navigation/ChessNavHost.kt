@@ -1,16 +1,17 @@
 package com.example.core.ui.navigation
 
 import androidx.annotation.StringRes
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddBox
@@ -29,14 +30,20 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.NavigationRailItemDefaults
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hasRoute
@@ -108,55 +115,69 @@ fun ChessLanAppRoot(
         navigateTopLevelTab(navController = navController, destination = destination)
     }
 
+    val density = LocalDensity.current
+    var measuredNavBarHeightPx by remember { mutableIntStateOf(0) }
+    var measuredNavRailWidthPx by remember { mutableIntStateOf(0) }
+    val fallbackBottomBarHeight = 80.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
         val useNavRail = maxWidth >= 600.dp
+        val topLevelBottomPadding = if (useNavRail) {
+            0.dp
+        } else if (measuredNavBarHeightPx > 0) {
+            with(density) { measuredNavBarHeightPx.toDp() }
+        } else {
+            fallbackBottomBarHeight
+        }
+        val topLevelStartPadding = if (!useNavRail) {
+            0.dp
+        } else if (measuredNavRailWidthPx > 0) {
+            with(density) { measuredNavRailWidthPx.toDp() }
+        } else {
+            80.dp
+        }
 
-        if (useNavRail) {
-            Row(modifier = Modifier.fillMaxSize()) {
-                if (isTopLevel) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            ChessNavHost(
+                navController = navController,
+                showTopLevelBack = false,
+                onSelectTopLevelTab = navigateToTab,
+                topLevelStartPadding = topLevelStartPadding,
+                topLevelBottomPadding = topLevelBottomPadding
+            )
+
+            if (useNavRail) {
+                AnimatedVisibility(
+                    visible = isTopLevel,
+                    enter = fadeIn(animationSpec = tween(durationMillis = 90)),
+                    exit = fadeOut(animationSpec = tween(durationMillis = 70)),
+                    modifier = Modifier.align(Alignment.CenterStart)
+                ) {
                     ChessNavigationRail(
                         currentDestination = currentDestination,
-                        onSelectTab = navigateToTab
+                        onSelectTab = navigateToTab,
+                        modifier = Modifier.onSizeChanged { size ->
+                            if (size.width > 0) measuredNavRailWidthPx = size.width
+                        }
                     )
                 }
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
+            } else {
+                AnimatedVisibility(
+                    visible = isTopLevel,
+                    enter = fadeIn(animationSpec = tween(durationMillis = 90)),
+                    exit = fadeOut(animationSpec = tween(durationMillis = 70)),
+                    modifier = Modifier.align(Alignment.BottomCenter)
                 ) {
-                    ChessNavHost(
-                        navController = navController,
-                        showTopLevelBack = false,
-                        onSelectTopLevelTab = navigateToTab
-                    )
-                }
-            }
-        } else {
-            Scaffold(
-                containerColor = MaterialTheme.colorScheme.background,
-                contentWindowInsets = WindowInsets(0, 0, 0, 0),
-                bottomBar = {
-                    if (isTopLevel) {
-                        ChessNavigationBar(
-                            currentDestination = currentDestination,
-                            onSelectTab = navigateToTab
-                        )
-                    }
-                }
-            ) { innerPadding ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding)
-                ) {
-                    ChessNavHost(
-                        navController = navController,
-                        showTopLevelBack = false,
-                        onSelectTopLevelTab = navigateToTab
+                    ChessNavigationBar(
+                        currentDestination = currentDestination,
+                        onSelectTab = navigateToTab,
+                        modifier = Modifier.onSizeChanged { size ->
+                            if (size.height > 0) measuredNavBarHeightPx = size.height
+                        }
                     )
                 }
             }
@@ -167,10 +188,12 @@ fun ChessLanAppRoot(
 @Composable
 private fun ChessNavigationBar(
     currentDestination: NavDestination?,
-    onSelectTab: (AppDestination) -> Unit
+    onSelectTab: (AppDestination) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val colors = ChessTheme.colors
     NavigationBar(
+        modifier = modifier,
         containerColor = colors.backgroundSecondary,
         tonalElevation = 0.dp
     ) {
@@ -207,10 +230,12 @@ private fun ChessNavigationBar(
 @Composable
 private fun ChessNavigationRail(
     currentDestination: NavDestination?,
-    onSelectTab: (AppDestination) -> Unit
+    onSelectTab: (AppDestination) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val colors = ChessTheme.colors
     NavigationRail(
+        modifier = modifier,
         containerColor = colors.backgroundSecondary
     ) {
         TopLevelTab.entries.forEach { tab ->
@@ -247,8 +272,14 @@ private fun ChessNavigationRail(
 private fun ChessNavHost(
     navController: NavHostController,
     showTopLevelBack: Boolean,
-    onSelectTopLevelTab: (AppDestination) -> Unit
+    onSelectTopLevelTab: (AppDestination) -> Unit,
+    topLevelStartPadding: Dp = 0.dp,
+    topLevelBottomPadding: Dp = 0.dp
 ) {
+    val topLevelModifier = Modifier
+        .fillMaxSize()
+        .padding(start = topLevelStartPadding, bottom = topLevelBottomPadding)
+
     NavHost(
         navController = navController,
         startDestination = AppDestination.Home,
@@ -258,38 +289,42 @@ private fun ChessNavHost(
         popExitTransition = { fadeOut(animationSpec = tween(durationMillis = 70)) }
     ) {
         composable<AppDestination.Home> {
-            HomeRoute(
-                onPlayClick = { onSelectTopLevelTab(AppDestination.CreateGame) },
-                onCreateGameClick = { onSelectTopLevelTab(AppDestination.CreateGame) },
-                onJoinGameClick = { mode ->
-                    navController.navigate(AppDestination.JoinGame(initialMode = mode))
-                },
-                onHistoryClick = { onSelectTopLevelTab(AppDestination.History) },
-                onAnalysisClick = { navController.navigate(AppDestination.Analysis) },
-                onProfileClick = { navController.navigate(AppDestination.Profile) },
-                onSettingsClick = { onSelectTopLevelTab(AppDestination.Settings) }
-            )
+            Box(modifier = topLevelModifier) {
+                HomeRoute(
+                    onPlayClick = { onSelectTopLevelTab(AppDestination.CreateGame) },
+                    onCreateGameClick = { onSelectTopLevelTab(AppDestination.CreateGame) },
+                    onJoinGameClick = { mode ->
+                        navController.navigate(AppDestination.JoinGame(initialMode = mode))
+                    },
+                    onHistoryClick = { onSelectTopLevelTab(AppDestination.History) },
+                    onAnalysisClick = { navController.navigate(AppDestination.Analysis) },
+                    onProfileClick = { navController.navigate(AppDestination.Profile) },
+                    onSettingsClick = { onSelectTopLevelTab(AppDestination.Settings) }
+                )
+            }
         }
 
         composable<AppDestination.CreateGame> {
-            CreateGameScreen(
-                onNavigateBack = if (showTopLevelBack) {
-                    { navController.popBackStack() }
-                } else {
-                    null
-                },
-                onCreateRoom = { timeControlId, side, playerName, connectionType ->
-                    navController.navigate(
-                        AppDestination.Lobby(
-                            timeControlId = timeControlId,
-                            side = side,
-                            playerName = playerName,
-                            connectionType = connectionType,
-                            isHost = true
+            Box(modifier = topLevelModifier) {
+                CreateGameScreen(
+                    onNavigateBack = if (showTopLevelBack) {
+                        { navController.popBackStack() }
+                    } else {
+                        null
+                    },
+                    onCreateRoom = { timeControlId, side, playerName, connectionType ->
+                        navController.navigate(
+                            AppDestination.Lobby(
+                                timeControlId = timeControlId,
+                                side = side,
+                                playerName = playerName,
+                                connectionType = connectionType,
+                                isHost = true
+                            )
                         )
-                    )
-                }
-            )
+                    }
+                )
+            }
         }
 
         composable<AppDestination.JoinGame> { backStackEntry ->
@@ -362,13 +397,15 @@ private fun ChessNavHost(
         }
 
         composable<AppDestination.History> {
-            HistoryScreen(
-                onNavigateBack = if (showTopLevelBack) {
-                    { navController.popBackStack() }
-                } else {
-                    null
-                }
-            )
+            Box(modifier = topLevelModifier) {
+                HistoryScreen(
+                    onNavigateBack = if (showTopLevelBack) {
+                        { navController.popBackStack() }
+                    } else {
+                        null
+                    }
+                )
+            }
         }
 
         composable<AppDestination.Analysis> {
@@ -384,13 +421,15 @@ private fun ChessNavHost(
         }
 
         composable<AppDestination.Settings> {
-            SettingsScreen(
-                onNavigateBack = if (showTopLevelBack) {
-                    { navController.popBackStack() }
-                } else {
-                    null
-                }
-            )
+            Box(modifier = topLevelModifier) {
+                SettingsScreen(
+                    onNavigateBack = if (showTopLevelBack) {
+                        { navController.popBackStack() }
+                    } else {
+                        null
+                    }
+                )
+            }
         }
     }
 }

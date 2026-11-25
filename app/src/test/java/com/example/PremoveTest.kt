@@ -23,8 +23,12 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-private class PremoveFakeSettingsRepository : SettingsRepository {
-    private val state = MutableStateFlow(AppSettings(animationEnabled = false))
+private class PremoveFakeSettingsRepository(
+    premovesEnabled: Boolean = true
+) : SettingsRepository {
+    val state = MutableStateFlow(
+        AppSettings(animationEnabled = false, premovesEnabled = premovesEnabled)
+    )
     override fun observeSettings(): Flow<AppSettings> = state
     override suspend fun updatePlayerName(name: String) {}
     override suspend fun updateBoardTheme(theme: BoardTheme) {}
@@ -36,6 +40,9 @@ private class PremoveFakeSettingsRepository : SettingsRepository {
     override suspend fun updateHighlightLastMove(enabled: Boolean) {}
     override suspend fun updateConfirmResign(enabled: Boolean) {}
     override suspend fun updateVibrationEnabled(enabled: Boolean) {}
+    override suspend fun updatePremovesEnabled(enabled: Boolean) {
+        state.value = state.value.copy(premovesEnabled = enabled)
+    }
 }
 
 private class PremoveFakeClock(var nowMs: Long = 1_000L) : MonotonicTimeProvider {
@@ -45,6 +52,33 @@ private class PremoveFakeClock(var nowMs: Long = 1_000L) : MonotonicTimeProvider
 class PremoveTest {
 
     private fun sq(algebraic: String): BoardSquare = BoardSquare.fromAlgebraic(algebraic)!!
+
+    @Test
+    fun premoves_disabledByDefaultInSettingsAndIgnoredWhenOff() {
+        assertFalse(AppSettings().premovesEnabled)
+
+        val clock = PremoveFakeClock()
+        val vm = GameViewModel(
+            chessEngine = ChesslibChessEngine(),
+            timeProvider = clock,
+            observeSettingsUseCase = ObserveSettingsUseCase(
+                PremoveFakeSettingsRepository(premovesEnabled = false)
+            )
+        )
+        vm.initializeSession(TimeControl.BLITZ_5_0.id)
+
+        // White's turn: Black cannot select or queue a premove while premovesEnabled == false
+        vm.onSquareTap(sq("e7"))
+        assertFalse(vm.uiState.value.boardState.isPremoveSelection)
+        assertNull(vm.uiState.value.boardState.selectedSquare)
+        assertFalse(vm.onMoveAttempt(sq("e7"), sq("e5"), fromDrag = false))
+        assertTrue(vm.uiState.value.queuedPremoves.isEmpty())
+        assertEquals(
+            BoardPiece(PieceType.PAWN, PieceColor.BLACK),
+            vm.uiState.value.boardState.pieces[sq("e7")]
+        )
+        assertNull(vm.uiState.value.boardState.pieces[sq("e5")])
+    }
 
     @Test
     fun premoveCalculator_generatesExpectedTargetsForAllPieceTypes() {
@@ -85,12 +119,12 @@ class PremoveTest {
     }
 
     @Test
-    fun premove_executesAutomaticallyWhenOpponentMovesAndSyncsClock() {
+    fun premove_placesPieceVirtuallyOnTargetAndExecutesAutomaticallyWhenOpponentMoves() {
         val clock = PremoveFakeClock()
         val vm = GameViewModel(
             chessEngine = ChesslibChessEngine(),
             timeProvider = clock,
-            observeSettingsUseCase = ObserveSettingsUseCase(PremoveFakeSettingsRepository())
+            observeSettingsUseCase = ObserveSettingsUseCase(PremoveFakeSettingsRepository(premovesEnabled = true))
         )
         vm.initializeSession(TimeControl.BLITZ_5_0.id)
 
@@ -101,6 +135,13 @@ class PremoveTest {
         assertNotNull(vm.uiState.value.queuedPremove)
         assertEquals(sq("e7"), vm.uiState.value.queuedPremove?.from)
         assertEquals(sq("e5"), vm.uiState.value.queuedPremove?.to)
+
+        // Virtually placed on target square e5 and removed from origin e7
+        assertNull(vm.uiState.value.boardState.pieces[sq("e7")])
+        assertEquals(
+            BoardPiece(PieceType.PAWN, PieceColor.BLACK),
+            vm.uiState.value.boardState.pieces[sq("e5")]
+        )
 
         // White plays 1. e4 -> Black's premove 1... e5 fires automatically!
         assertTrue(vm.onMoveAttempt(sq("e2"), sq("e4"), fromDrag = false))
@@ -116,27 +157,83 @@ class PremoveTest {
     }
 
     @Test
-    fun illegalPremove_isCancelledSilentlyWhenOpponentBlocksOrCaptures() {
+    fun multiPremove_supportsChainingSamePieceAndDifferentPiecesInOrder() {
         val clock = PremoveFakeClock()
         val vm = GameViewModel(
             chessEngine = ChesslibChessEngine(),
             timeProvider = clock,
-            observeSettingsUseCase = ObserveSettingsUseCase(PremoveFakeSettingsRepository())
+            observeSettingsUseCase = ObserveSettingsUseCase(PremoveFakeSettingsRepository(premovesEnabled = true))
         )
         vm.initializeSession(TimeControl.BLITZ_5_0.id)
 
-        // White's turn: Black queues diagonal pawn capture premove d7 -> e6 (illegal unless White somehow lands on e6, impossible on move 1)
-        assertTrue(vm.onMoveAttempt(sq("d7"), sq("e6"), fromDrag = true))
-        assertNotNull(vm.uiState.value.queuedPremove)
+        // White's turn: Black chains 3 premoves including 2 with the SAME knight:
+        // 1) g8 -> f6, 2) f6 -> e4 (same knight from its virtual square!), 3) b8 -> c6 (second knight)
+        assertTrue(vm.onMoveAttempt(sq("g8"), sq("f6"), fromDrag = false))
+        assertTrue(vm.onMoveAttempt(sq("f6"), sq("e4"), fromDrag = false))
+        assertTrue(vm.onMoveAttempt(sq("b8"), sq("c6"), fromDrag = false))
 
-        // White plays 1. e4 -> Black's diagonal premove d7->e6 is illegal and must be cancelled silently
+        val queuedState = vm.uiState.value
+        assertEquals(3, queuedState.queuedPremoves.size)
+        assertEquals(3, queuedState.boardState.queuedPremoves.size)
+        // Virtual board shows g8 knight already standing on e4, and b8 knight on c6
+        assertNull(queuedState.boardState.pieces[sq("g8")])
+        assertNull(queuedState.boardState.pieces[sq("f6")])
+        assertEquals(BoardPiece(PieceType.KNIGHT, PieceColor.BLACK), queuedState.boardState.pieces[sq("e4")])
+        assertNull(queuedState.boardState.pieces[sq("b8")])
+        assertEquals(BoardPiece(PieceType.KNIGHT, PieceColor.BLACK), queuedState.boardState.pieces[sq("c6")])
+
+        // White plays 1. a3 -> Black's premove #1 (g8->f6) executes; premoves #2 and #3 remain queued & virtually placed
+        assertTrue(vm.onMoveAttempt(sq("a2"), sq("a3"), fromDrag = false))
+        val afterTurn1 = vm.uiState.value
+        assertEquals(listOf("a3", "Nf6"), afterTurn1.moveHistory.map { it.san })
+        assertEquals(2, afterTurn1.queuedPremoves.size)
+        assertEquals(sq("f6"), afterTurn1.queuedPremoves[0].from)
+        assertEquals(sq("e4"), afterTurn1.queuedPremoves[0].to)
+        assertEquals(BoardPiece(PieceType.KNIGHT, PieceColor.BLACK), afterTurn1.boardState.pieces[sq("e4")])
+        assertEquals(BoardPiece(PieceType.KNIGHT, PieceColor.BLACK), afterTurn1.boardState.pieces[sq("c6")])
+
+        // White plays 2. h3 -> Black's premove #2 (f6->e4) executes; premove #3 (b8->c6) remains queued
+        assertTrue(vm.onMoveAttempt(sq("h2"), sq("h3"), fromDrag = false))
+        val afterTurn2 = vm.uiState.value
+        assertEquals(listOf("a3", "Nf6", "h3", "Ne4"), afterTurn2.moveHistory.map { it.san })
+        assertEquals(1, afterTurn2.queuedPremoves.size)
+        assertEquals(sq("b8"), afterTurn2.queuedPremoves[0].from)
+        assertEquals(sq("c6"), afterTurn2.queuedPremoves[0].to)
+
+        // White plays 3. d3 -> Black's premove #3 (b8->c6) executes; queue now empty
+        assertTrue(vm.onMoveAttempt(sq("d2"), sq("d3"), fromDrag = false))
+        val afterTurn3 = vm.uiState.value
+        assertEquals(listOf("a3", "Nf6", "h3", "Ne4", "d3", "Nc6"), afterTurn3.moveHistory.map { it.san })
+        assertTrue(afterTurn3.queuedPremoves.isEmpty())
+    }
+
+    @Test
+    fun illegalPremoveHead_cancelsEntireRemainingChainAndRestoresRealBoard() {
+        val clock = PremoveFakeClock()
+        val vm = GameViewModel(
+            chessEngine = ChesslibChessEngine(),
+            timeProvider = clock,
+            observeSettingsUseCase = ObserveSettingsUseCase(PremoveFakeSettingsRepository(premovesEnabled = true))
+        )
+        vm.initializeSession(TimeControl.BLITZ_5_0.id)
+
+        // White's turn: Black queues illegal diagonal capture d7->e6 followed by valid g8->f6
+        assertTrue(vm.onMoveAttempt(sq("d7"), sq("e6"), fromDrag = true))
+        assertTrue(vm.onMoveAttempt(sq("g8"), sq("f6"), fromDrag = true))
+        assertEquals(2, vm.uiState.value.queuedPremoves.size)
+
+        // White plays 1. e4 -> head premove d7->e6 is illegal -> entire chain cancelled, real pieces restored
         assertTrue(vm.onMoveAttempt(sq("e2"), sq("e4"), fromDrag = false))
 
         val state = vm.uiState.value
+        assertTrue(state.queuedPremoves.isEmpty())
         assertNull(state.queuedPremove)
         assertEquals(1, state.moveHistory.size)
         assertEquals(PieceColor.BLACK, state.sideToMove)
         assertEquals(PieceColor.BLACK, state.clock.activeColor)
+        assertEquals(BoardPiece(PieceType.PAWN, PieceColor.BLACK), state.boardState.pieces[sq("d7")])
+        assertEquals(BoardPiece(PieceType.KNIGHT, PieceColor.BLACK), state.boardState.pieces[sq("g8")])
+        assertNull(state.boardState.pieces[sq("f6")])
     }
 
     @Test
@@ -145,7 +242,7 @@ class PremoveTest {
         val vm = GameViewModel(
             chessEngine = ChesslibChessEngine(),
             timeProvider = clock,
-            observeSettingsUseCase = ObserveSettingsUseCase(PremoveFakeSettingsRepository())
+            observeSettingsUseCase = ObserveSettingsUseCase(PremoveFakeSettingsRepository(premovesEnabled = true))
         )
         vm.initializeSession(TimeControl.BLITZ_5_0.id)
 
@@ -198,7 +295,7 @@ class PremoveTest {
         val vm = GameViewModel(
             chessEngine = engine,
             timeProvider = clock,
-            observeSettingsUseCase = ObserveSettingsUseCase(PremoveFakeSettingsRepository())
+            observeSettingsUseCase = ObserveSettingsUseCase(PremoveFakeSettingsRepository(premovesEnabled = true))
         )
         // Do NOT call initializeSession (would reset engine) — interact directly on loaded position
         // Black is to move; White queues premove a7 -> a8
@@ -209,6 +306,9 @@ class PremoveTest {
         vm.onPromotionSelected(PieceType.KNIGHT)
         assertNull(vm.uiState.value.pendingPromotion)
         assertEquals(PieceType.KNIGHT, vm.uiState.value.queuedPremove?.promotion)
+        // Promoted knight is already virtually visible on a8
+        assertEquals(BoardPiece(PieceType.KNIGHT, PieceColor.WHITE), vm.uiState.value.boardState.pieces[sq("a8")])
+        assertNull(vm.uiState.value.boardState.pieces[sq("a7")])
 
         // Black plays h6 -> h5 -> White's premove a7->a8=N executes automatically!
         assertTrue(vm.onMoveAttempt(sq("h6"), sq("h5"), fromDrag = false))

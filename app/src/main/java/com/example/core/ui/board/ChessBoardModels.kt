@@ -154,10 +154,13 @@ data class ChessBoardState(
     val lastMove: BoardMove? = null,
     val checkedKingSquare: BoardSquare? = null,
     val lastMoveAnimation: BoardMoveAnimation? = null,
-    val queuedPremove: BoardPremove? = null,
+    val queuedPremoves: List<BoardPremove> = emptyList(),
     val isPremoveSelection: Boolean = false,
     val positionVersion: Long = 0L
-)
+) {
+    val queuedPremove: BoardPremove?
+        get() = queuedPremoves.firstOrNull()
+}
 
 /**
  * Pure coordinate projection math between logical BoardSquare and Canvas pixel/grid coordinates.

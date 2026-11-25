@@ -109,7 +109,15 @@ class LocalGameServer(
 
     suspend fun start(): Int {
         stop()
-        val engine = embeddedServer(CIO, port = config.requestedPort, host = "0.0.0.0") {
+        // Explicitly disable Ktor auto-reload file watching on Android so NIO LinuxWatchService
+        // is never created or finalized with ClosedWatchServiceException.
+        runCatching { System.setProperty("io.ktor.development", "false") }
+        val engine = embeddedServer(
+            factory = CIO,
+            port = config.requestedPort,
+            host = "0.0.0.0",
+            watchPaths = emptyList()
+        ) {
             install(WebSockets) {
                 pingPeriod = 15.seconds
                 timeout = 30.seconds
@@ -172,7 +180,9 @@ class LocalGameServer(
                 activeClient.close(CloseReason(CloseReason.Codes.NORMAL, "Host closed room"))
             }
         }
-        serverEngine?.stop(gracePeriodMillis = 250L, timeoutMillis = 1_000L)
+        runCatching {
+            serverEngine?.stop(gracePeriodMillis = 250L, timeoutMillis = 1_000L)
+        }
         serverEngine = null
         _boundPort.value = 0
     }

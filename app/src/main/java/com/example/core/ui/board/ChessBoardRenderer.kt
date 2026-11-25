@@ -61,16 +61,20 @@ internal object ChessBoardRenderer {
         }
     }
 
-    fun DrawScope.drawPremoveHighlight(
-        premove: BoardPremove?,
+    fun DrawScope.drawPremoveHighlights(
+        premoves: List<BoardPremove>,
         squareSize: Float,
         colors: BoardSquareColors,
         flipped: Boolean
     ) {
-        if (premove == null) return
+        if (premoves.isEmpty()) return
         val cellSize = Size(squareSize, squareSize)
-        val squares = arrayOf(premove.from, premove.to)
-        for (square in squares) {
+        val highlightedSquares = LinkedHashSet<BoardSquare>(premoves.size * 2)
+        for (premove in premoves) {
+            highlightedSquares.add(premove.from)
+            highlightedSquares.add(premove.to)
+        }
+        for (square in highlightedSquares) {
             val topLeft = BoardCoordinates.squareTopLeft(square, squareSize, flipped)
             drawRect(
                 color = if (square.isLightSquare) colors.premoveLight else colors.premoveDark,

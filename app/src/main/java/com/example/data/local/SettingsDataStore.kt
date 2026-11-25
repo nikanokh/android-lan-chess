@@ -40,6 +40,7 @@ class SettingsDataStore @Inject constructor(
         val HIGHLIGHT_LAST_MOVE = booleanPreferencesKey("highlight_last_move")
         val CONFIRM_RESIGN = booleanPreferencesKey("confirm_resign")
         val VIBRATION_ENABLED = booleanPreferencesKey("vibration_enabled")
+        val PREMOVES_ENABLED = booleanPreferencesKey("premoves_enabled")
     }
 
     val settingsFlow: Flow<AppSettings> = context.settingsDataStore.data
@@ -68,7 +69,8 @@ class SettingsDataStore @Inject constructor(
                 highlightLegalMoves = prefs[Keys.HIGHLIGHT_LEGAL_MOVES] ?: true,
                 highlightLastMove = prefs[Keys.HIGHLIGHT_LAST_MOVE] ?: true,
                 confirmResign = prefs[Keys.CONFIRM_RESIGN] ?: true,
-                vibrationEnabled = prefs[Keys.VIBRATION_ENABLED] ?: true
+                vibrationEnabled = prefs[Keys.VIBRATION_ENABLED] ?: true,
+                premovesEnabled = prefs[Keys.PREMOVES_ENABLED] ?: false
             )
         }
 
@@ -117,5 +119,9 @@ class SettingsDataStore @Inject constructor(
 
     suspend fun updateVibrationEnabled(enabled: Boolean) {
         context.settingsDataStore.edit { prefs -> prefs[Keys.VIBRATION_ENABLED] = enabled }
+    }
+
+    suspend fun updatePremovesEnabled(enabled: Boolean) {
+        context.settingsDataStore.edit { prefs -> prefs[Keys.PREMOVES_ENABLED] = enabled }
     }
 }

@@ -40,4 +40,5 @@ class UpdateSettingsUseCase @Inject constructor(
     suspend fun setHighlightLastMove(enabled: Boolean) = settingsRepository.updateHighlightLastMove(enabled)
     suspend fun setConfirmResign(enabled: Boolean) = settingsRepository.updateConfirmResign(enabled)
     suspend fun setVibrationEnabled(enabled: Boolean) = settingsRepository.updateVibrationEnabled(enabled)
+    suspend fun setPremovesEnabled(enabled: Boolean) = settingsRepository.updatePremovesEnabled(enabled)
 }

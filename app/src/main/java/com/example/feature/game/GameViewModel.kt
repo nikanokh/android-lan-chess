@@ -18,6 +18,7 @@ import com.example.core.network.ConnectionType
 import com.example.core.network.GameSessionManager
 import com.example.core.network.GameSessionState
 import com.example.core.ui.board.BoardMoveAnimation
+import com.example.core.ui.board.BoardPiece
 import com.example.core.ui.board.BoardPremove
 import com.example.core.ui.board.BoardSquare
 import com.example.core.ui.board.ChessBoardState
@@ -102,10 +103,14 @@ class GameViewModel private constructor(
         playSound(ChessSoundEffect.CLICK)
     }
 
-    val settings: StateFlow<AppSettings> = observeSettingsUseCase().stateIn(
+    private val settingsFlow = observeSettingsUseCase()
+    private val initialSettings: AppSettings =
+        (settingsFlow as? StateFlow<AppSettings>)?.value ?: AppSettings()
+
+    val settings: StateFlow<AppSettings> = settingsFlow.stateIn(
         scope = viewModelScope,
         started = SharingStarted.Eagerly,
-        initialValue = AppSettings()
+        initialValue = initialSettings
     )
 
     private val _uiState = MutableStateFlow(
@@ -117,6 +122,51 @@ class GameViewModel private constructor(
         )
     )
     val uiState: StateFlow<GameUiState> = _uiState.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            settings.collect { appSettings ->
+                val enabled = appSettings.premovesEnabled
+                _uiState.update { current ->
+                    if (current.premovesEnabled == enabled) return@update current
+                    if (!enabled && (
+                            current.queuedPremoves.isNotEmpty() ||
+                            current.boardState.isPremoveSelection ||
+                            current.pendingPromotion?.isPremove == true
+                        )
+                    ) {
+                        val restoredPieces = if (current.isViewingHistory) {
+                            current.boardState.pieces
+                        } else {
+                            currentLivePieces()
+                        }
+                        current.copy(
+                            premovesEnabled = false,
+                            queuedPremoves = emptyList(),
+                            pendingPromotion = current.pendingPromotion?.takeUnless { it.isPremove },
+                            boardState = current.boardState.copy(
+                                pieces = restoredPieces,
+                                selectedSquare = if (current.boardState.isPremoveSelection) null else current.boardState.selectedSquare,
+                                legalTargets = if (current.boardState.isPremoveSelection) emptyList() else current.boardState.legalTargets,
+                                isPremoveSelection = false,
+                                queuedPremoves = emptyList()
+                            )
+                        )
+                    } else {
+                        current.copy(premovesEnabled = enabled)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun currentLivePieces(): Map<BoardSquare, BoardPiece> {
+        return if (isLanMode) {
+            gameSessionManager?.livePositionSnapshot()?.pieces.orEmpty()
+        } else {
+            chessEngine.snapshot().pieces
+        }
+    }
 
     fun initializeSession(
         timeControlId: String,
@@ -157,21 +207,23 @@ class GameViewModel private constructor(
     }
 
     fun onSquareTap(square: BoardSquare) {
-        val current = _uiState.value
-        if (current.isGameOver || current.isViewingHistory) return
+        val rawCurrent = _uiState.value
+        if (rawCurrent.isGameOver || rawCurrent.isViewingHistory) return
+
+        val premovesAllowed = settings.value.premovesEnabled
+        val current = if (rawCurrent.premovesEnabled == premovesAllowed) {
+            rawCurrent
+        } else {
+            rawCurrent.copy(premovesEnabled = premovesAllowed)
+        }
 
         val board = current.boardState
         if (board.selectedSquare == square) {
-            val shouldCancelPremove = board.isPremoveSelection &&
-                current.queuedPremove?.from == square
-            val nextPremove = if (shouldCancelPremove) null else current.queuedPremove
             _uiState.value = current.copy(
-                queuedPremove = nextPremove,
                 boardState = board.copy(
                     selectedSquare = null,
                     legalTargets = emptyList(),
-                    isPremoveSelection = false,
-                    queuedPremove = nextPremove
+                    isPremoveSelection = false
                 )
             )
             return
@@ -193,7 +245,7 @@ class GameViewModel private constructor(
                     )
                 )
             } else {
-                // Waiting-side piece tapped -> enter premove target selection
+                // Waiting-side piece (live or virtually positioned by an earlier premove) -> premove selection
                 val premoveTargets = PremoveCalculator.premoveTargetsFor(square, piece)
                 _uiState.value = current.copy(
                     boardState = board.copy(
@@ -204,62 +256,137 @@ class GameViewModel private constructor(
                 )
             }
         } else {
-            // Tapping an empty / non-selectable square clears selection and cancels any queued premove
+            // Tapping an empty or non-selectable square clears selection and cancels queued premoves
+            val restoredPieces = if (current.queuedPremoves.isNotEmpty()) {
+                currentLivePieces()
+            } else {
+                board.pieces
+            }
             _uiState.value = current.copy(
-                queuedPremove = null,
+                queuedPremoves = emptyList(),
                 boardState = board.copy(
+                    pieces = restoredPieces,
                     selectedSquare = null,
                     legalTargets = emptyList(),
                     isPremoveSelection = false,
-                    queuedPremove = null
+                    queuedPremoves = emptyList()
                 )
             )
         }
     }
 
     fun onMoveAttempt(from: BoardSquare, to: BoardSquare, fromDrag: Boolean): Boolean {
-        val current = _uiState.value
-        if (current.isGameOver || current.isViewingHistory) return false
+        val rawCurrent = _uiState.value
+        if (rawCurrent.isGameOver || rawCurrent.isViewingHistory) return false
 
-        val piece = if (isLanMode) {
-            gameSessionManager?.livePositionSnapshot()?.pieces?.get(from)
+        val premovesAllowed = settings.value.premovesEnabled
+        val current = if (rawCurrent.premovesEnabled == premovesAllowed) {
+            rawCurrent
         } else {
-            chessEngine.snapshot().pieces[from]
-        } ?: return false
-        if (!current.canInteractWithPiece(piece)) return false
-
-        // Waiting side piece -> queue Chess.com-style premove
-        if (piece.color != current.sideToMove) {
-            return attemptQueuePremove(from = from, to = to, piece = piece, fromDrag = fromDrag)
+            rawCurrent.copy(premovesEnabled = premovesAllowed)
         }
 
-        if (isLanMode) {
-            val manager = gameSessionManager ?: return false
-            val legalTargets = manager.legalTargetsFrom(from)
-            if (legalTargets.none { it.square == to }) {
-                if (!fromDrag) playSound(ChessSoundEffect.ILLEGAL)
-                return false
-            }
+        val livePiece = currentLivePieces()[from]
+        if (livePiece != null && livePiece.color == current.sideToMove) {
+            if (!current.canInteractWithPiece(livePiece)) return false
+            val piece = livePiece
+            if (isLanMode) {
+                val manager = gameSessionManager ?: return false
+                val legalTargets = manager.legalTargetsFrom(from)
+                if (legalTargets.none { it.square == to }) {
+                    if (!fromDrag) playSound(ChessSoundEffect.ILLEGAL)
+                    return false
+                }
 
-            if (manager.isPromotionMove(from, to)) {
+                if (manager.isPromotionMove(from, to)) {
+                    _uiState.value = current.copy(
+                        pendingPromotion = PendingPromotion(
+                            from = from,
+                            to = to,
+                            color = piece.color,
+                            fromDrag = fromDrag,
+                            isPremove = false
+                        ),
+                        boardState = current.boardState.copy(
+                            selectedSquare = null,
+                            legalTargets = emptyList(),
+                            isPremoveSelection = false
+                        )
+                    )
+                    return true
+                }
+
+                pendingDraggedLanMove = if (fromDrag) (from to to) else null
                 _uiState.value = current.copy(
-                    pendingPromotion = PendingPromotion(
-                        from = from,
-                        to = to,
-                        color = piece.color,
-                        fromDrag = fromDrag,
-                        isPremove = false
-                    ),
                     boardState = current.boardState.copy(
                         selectedSquare = null,
                         legalTargets = emptyList(),
                         isPremoveSelection = false
                     )
                 )
+                viewModelScope.launch {
+                    manager.submitMove(from, to, promotion = null)
+                }
                 return true
             }
 
-            pendingDraggedLanMove = if (fromDrag) (from to to) else null
+            // Verify live clock before committing live move so flagged players cannot move after 0:00
+            if (checkAndApplyTimeoutIfFlagged()) return false
+
+            return when (val result = chessEngine.attemptMove(from, to, promotion = null)) {
+                is EngineMoveResult.Success -> {
+                    handleMoveCommitted(result.move, result.snapshot, fromDrag = fromDrag)
+                    true
+                }
+                is EngineMoveResult.RequiresPromotion -> {
+                    _uiState.value = current.copy(
+                        pendingPromotion = PendingPromotion(
+                            from = result.from,
+                            to = result.to,
+                            color = result.color,
+                            fromDrag = fromDrag,
+                            isPremove = false
+                        ),
+                        boardState = current.boardState.copy(
+                            selectedSquare = null,
+                            legalTargets = emptyList(),
+                            isPremoveSelection = false
+                        )
+                    )
+                    true
+                }
+                is EngineMoveResult.Illegal -> {
+                    if (!fromDrag) playSound(ChessSoundEffect.ILLEGAL)
+                    false
+                }
+            }
+        }
+
+        // Waiting side piece (real or virtually placed by an earlier premove) -> queue premove
+        val projectedPiece = current.boardState.pieces[from] ?: return false
+        if (projectedPiece.color != current.sideToMove) {
+            if (!current.canInteractWithPiece(projectedPiece)) return false
+            return attemptQueuePremove(
+                from = from,
+                to = to,
+                piece = projectedPiece,
+                fromDrag = fromDrag
+            )
+        }
+        return false
+    }
+
+    private fun attemptQueuePremove(
+        from: BoardSquare,
+        to: BoardSquare,
+        piece: BoardPiece,
+        fromDrag: Boolean
+    ): Boolean {
+        val current = _uiState.value
+        if (!settings.value.premovesEnabled) return false
+
+        if (!PremoveCalculator.isPremoveTargetValid(from, to, piece)) {
+            if (!fromDrag) playSound(ChessSoundEffect.ILLEGAL)
             _uiState.value = current.copy(
                 boardState = current.boardState.copy(
                     selectedSquare = null,
@@ -267,61 +394,19 @@ class GameViewModel private constructor(
                     isPremoveSelection = false
                 )
             )
-            viewModelScope.launch {
-                manager.submitMove(from, to, promotion = null)
-            }
-            return true
+            return false
         }
 
-        // Verify live clock before committing live move so flagged players cannot move after 0:00
-        if (checkAndApplyTimeoutIfFlagged()) return false
-
-        return when (val result = chessEngine.attemptMove(from, to, promotion = null)) {
-            is EngineMoveResult.Success -> {
-                handleMoveCommitted(result.move, result.snapshot, fromDrag = fromDrag)
-                true
-            }
-            is EngineMoveResult.RequiresPromotion -> {
-                _uiState.value = current.copy(
-                    pendingPromotion = PendingPromotion(
-                        from = result.from,
-                        to = result.to,
-                        color = result.color,
-                        fromDrag = fromDrag,
-                        isPremove = false
-                    ),
-                    boardState = current.boardState.copy(
-                        selectedSquare = null,
-                        legalTargets = emptyList(),
-                        isPremoveSelection = false
-                    )
-                )
-                true
-            }
-            is EngineMoveResult.Illegal -> {
-                if (!fromDrag) playSound(ChessSoundEffect.ILLEGAL)
-                false
-            }
-        }
-    }
-
-    private fun attemptQueuePremove(
-        from: BoardSquare,
-        to: BoardSquare,
-        piece: com.example.core.ui.board.BoardPiece,
-        fromDrag: Boolean
-    ): Boolean {
-        val current = _uiState.value
-        if (!PremoveCalculator.isPremoveTargetValid(from, to, piece)) {
+        val existingForSide = current.queuedPremoves
+            .takeIf { it.firstOrNull()?.piece?.color == piece.color }
+            .orEmpty()
+        if (existingForSide.size >= PremoveCalculator.MAX_QUEUED_PREMOVES) {
             if (!fromDrag) playSound(ChessSoundEffect.ILLEGAL)
-            val nextPremove = current.queuedPremove?.takeIf { it.piece.color != piece.color }
             _uiState.value = current.copy(
-                queuedPremove = nextPremove,
                 boardState = current.boardState.copy(
                     selectedSquare = null,
                     legalTargets = emptyList(),
-                    isPremoveSelection = false,
-                    queuedPremove = nextPremove
+                    isPremoveSelection = false
                 )
             )
             return false
@@ -346,13 +431,20 @@ class GameViewModel private constructor(
         }
 
         val premove = BoardPremove(from = from, to = to, piece = piece, promotion = null)
+        val updatedQueue = existingForSide + premove
+        val projectedPieces = PremoveCalculator.applyVirtualPremoves(
+            basePieces = currentLivePieces(),
+            premoves = updatedQueue
+        )
         _uiState.value = current.copy(
-            queuedPremove = premove,
+            premovesEnabled = true,
+            queuedPremoves = updatedQueue,
             boardState = current.boardState.copy(
+                pieces = projectedPieces,
                 selectedSquare = null,
                 legalTargets = emptyList(),
                 isPremoveSelection = false,
-                queuedPremove = premove
+                queuedPremoves = updatedQueue
             )
         )
         playSound(ChessSoundEffect.PREMOVE)
@@ -361,28 +453,45 @@ class GameViewModel private constructor(
 
     fun cancelPremove() {
         _uiState.update { current ->
-            if (current.queuedPremove == null && !current.boardState.isPremoveSelection) return@update current
+            if (current.queuedPremoves.isEmpty() && !current.boardState.isPremoveSelection) {
+                return@update current
+            }
+            val restoredPieces = if (current.isViewingHistory) {
+                current.boardState.pieces
+            } else {
+                currentLivePieces()
+            }
             current.copy(
-                queuedPremove = null,
+                queuedPremoves = emptyList(),
+                pendingPromotion = current.pendingPromotion?.takeUnless { it.isPremove },
                 boardState = current.boardState.copy(
+                    pieces = restoredPieces,
                     selectedSquare = if (current.boardState.isPremoveSelection) null else current.boardState.selectedSquare,
                     legalTargets = if (current.boardState.isPremoveSelection) emptyList() else current.boardState.legalTargets,
                     isPremoveSelection = false,
-                    queuedPremove = null
+                    queuedPremoves = emptyList()
                 )
             )
         }
     }
 
     fun onPromotionSelected(pieceType: PieceType) {
-        val pending = _uiState.value.pendingPromotion ?: return
+        val current = _uiState.value
+        val pending = current.pendingPromotion ?: return
         if (pending.isPremove) {
-            val piece = if (isLanMode) {
-                gameSessionManager?.livePositionSnapshot()?.pieces?.get(pending.from)
-            } else {
-                chessEngine.snapshot().pieces[pending.from]
+            if (!settings.value.premovesEnabled) {
+                _uiState.update { it.copy(pendingPromotion = null) }
+                return
             }
-            if (piece == null || piece.color == _uiState.value.sideToMove) {
+            val piece = current.boardState.pieces[pending.from]
+            if (piece == null || piece.color == current.sideToMove) {
+                _uiState.update { it.copy(pendingPromotion = null) }
+                return
+            }
+            val existingForSide = current.queuedPremoves
+                .takeIf { it.firstOrNull()?.piece?.color == piece.color }
+                .orEmpty()
+            if (existingForSide.size >= PremoveCalculator.MAX_QUEUED_PREMOVES) {
                 _uiState.update { it.copy(pendingPromotion = null) }
                 return
             }
@@ -392,15 +501,21 @@ class GameViewModel private constructor(
                 piece = piece,
                 promotion = pieceType
             )
-            _uiState.update { current ->
-                current.copy(
+            val updatedQueue = existingForSide + premove
+            val projectedPieces = PremoveCalculator.applyVirtualPremoves(
+                basePieces = currentLivePieces(),
+                premoves = updatedQueue
+            )
+            _uiState.update { state ->
+                state.copy(
                     pendingPromotion = null,
-                    queuedPremove = premove,
-                    boardState = current.boardState.copy(
+                    queuedPremoves = updatedQueue,
+                    boardState = state.boardState.copy(
+                        pieces = projectedPieces,
                         selectedSquare = null,
                         legalTargets = emptyList(),
                         isPremoveSelection = false,
-                        queuedPremove = premove
+                        queuedPremoves = updatedQueue
                     )
                 )
             }
@@ -460,7 +575,7 @@ class GameViewModel private constructor(
                     lastMove = historicalSnapshot.lastMove?.toBoardMove(),
                     checkedKingSquare = historicalSnapshot.checkedKingSquare,
                     lastMoveAnimation = null,
-                    queuedPremove = null,
+                    queuedPremoves = emptyList(),
                     isPremoveSelection = false,
                     positionVersion = ++versionCounter
                 ),
@@ -496,16 +611,20 @@ class GameViewModel private constructor(
             chessEngine.snapshot()
         }
         _uiState.update { current ->
+            val projectedPieces = PremoveCalculator.applyVirtualPremoves(
+                basePieces = liveSnapshot.pieces,
+                premoves = current.queuedPremoves
+            )
             current.copy(
                 viewedPlyIndex = null,
                 boardState = ChessBoardState(
-                    pieces = liveSnapshot.pieces,
+                    pieces = projectedPieces,
                     selectedSquare = null,
                     legalTargets = emptyList(),
                     lastMove = liveSnapshot.lastMove?.toBoardMove(),
                     checkedKingSquare = liveSnapshot.checkedKingSquare,
                     lastMoveAnimation = null,
-                    queuedPremove = current.queuedPremove,
+                    queuedPremoves = current.queuedPremoves,
                     isPremoveSelection = false,
                     positionVersion = ++versionCounter
                 ),
@@ -790,26 +909,36 @@ class GameViewModel private constructor(
             false
         }
 
-        // Execute queued premove over LAN as soon as opponent's authoritative move hands us the turn
-        var nextPremove = previous.queuedPremove
+        // Execute FIFO queued premove over LAN as soon as opponent's authoritative move hands us the turn
+        val premovesAllowed = settings.value.premovesEnabled
+        var nextPremoves = if (premovesAllowed && !snapshot.isGameOver) {
+            previous.queuedPremoves
+        } else {
+            emptyList()
+        }
         if (isNewMove &&
             !snapshot.isGameOver &&
-            nextPremove != null &&
-            nextPremove.piece.color == session.localColor &&
+            nextPremoves.isNotEmpty() &&
+            nextPremoves.first().piece.color == session.localColor &&
             snapshot.sideToMove == session.localColor
         ) {
-            val premoveToFire = nextPremove
-            nextPremove = null
-            viewModelScope.launch {
-                val promo = if (manager.isPromotionMove(premoveToFire.from, premoveToFire.to)) {
-                    premoveToFire.promotion ?: PieceType.QUEEN
-                } else {
-                    premoveToFire.promotion
+            val premoveToFire = nextPremoves.first()
+            val isLegalNow = manager.legalTargetsFrom(premoveToFire.from)
+                .any { it.square == premoveToFire.to }
+            if (isLegalNow) {
+                nextPremoves = nextPremoves.drop(1)
+                viewModelScope.launch {
+                    val promo = if (manager.isPromotionMove(premoveToFire.from, premoveToFire.to)) {
+                        premoveToFire.promotion ?: PieceType.QUEEN
+                    } else {
+                        premoveToFire.promotion
+                    }
+                    manager.submitMove(premoveToFire.from, premoveToFire.to, promo)
                 }
-                manager.submitMove(premoveToFire.from, premoveToFire.to, promo)
+            } else {
+                // Cancel the entire remaining chain if the head premove is no longer legal
+                nextPremoves = emptyList()
             }
-        } else if (snapshot.isGameOver) {
-            nextPremove = null
         }
 
         if (snapshot.isGameOver || session.timeControl.isUnlimited) {
@@ -840,7 +969,8 @@ class GameViewModel private constructor(
                     outcome = snapshot.outcome,
                     moveHistory = snapshot.moveHistory,
                     movePairs = GameHistoryFormatter.toMovePairs(snapshot.moveHistory),
-                    queuedPremove = nextPremove,
+                    queuedPremoves = nextPremoves,
+                    premovesEnabled = premovesAllowed,
                     clock = clockSnap,
                     drawOfferState = session.drawOfferState,
                     drawOfferedBy = session.drawOfferedBy,
@@ -851,6 +981,8 @@ class GameViewModel private constructor(
             return
         }
 
+        val effectiveSkipSlide = skipSlide ||
+            (newAnimatedMove != null && nextPremoves.any { it.from == newAnimatedMove.to })
         val moveAnimation = newAnimatedMove?.let { move ->
             BoardMoveAnimation(
                 id = ++animationIdCounter,
@@ -859,13 +991,17 @@ class GameViewModel private constructor(
                 to = move.to,
                 capturedPiece = move.capturedPiece,
                 capturedSquare = move.capturedSquare ?: move.to,
-                skipSlideAnimation = skipSlide
+                skipSlideAnimation = effectiveSkipSlide
             )
         }
 
         val keepSelection = !isNewMove &&
             previous.boardState.selectedSquare != null &&
             !snapshot.isGameOver
+        val displayedPieces = PremoveCalculator.applyVirtualPremoves(
+            basePieces = snapshot.pieces,
+            premoves = nextPremoves
+        )
 
         _uiState.value = GameUiState(
             timeControl = session.timeControl,
@@ -875,13 +1011,13 @@ class GameViewModel private constructor(
             localPlayerName = session.localPlayerName,
             opponentName = session.opponentName,
             boardState = ChessBoardState(
-                pieces = snapshot.pieces,
+                pieces = displayedPieces,
                 selectedSquare = if (keepSelection) previous.boardState.selectedSquare else null,
                 legalTargets = if (keepSelection) previous.boardState.legalTargets else emptyList(),
                 lastMove = snapshot.lastMove?.toBoardMove(),
                 checkedKingSquare = snapshot.checkedKingSquare,
                 lastMoveAnimation = moveAnimation,
-                queuedPremove = nextPremove,
+                queuedPremoves = nextPremoves,
                 isPremoveSelection = if (keepSelection) previous.boardState.isPremoveSelection else false,
                 positionVersion = if (isNewMove || previous.moveHistory.size != snapshot.moveHistory.size) {
                     ++versionCounter
@@ -895,7 +1031,8 @@ class GameViewModel private constructor(
             moveHistory = snapshot.moveHistory,
             movePairs = GameHistoryFormatter.toMovePairs(snapshot.moveHistory),
             viewedPlyIndex = null,
-            queuedPremove = nextPremove,
+            queuedPremoves = nextPremoves,
+            premovesEnabled = premovesAllowed,
             clock = clockSnap,
             drawOfferState = session.drawOfferState,
             drawOfferedBy = session.drawOfferedBy,
@@ -955,7 +1092,11 @@ class GameViewModel private constructor(
     ) {
         val previousState = _uiState.value
         val currentControl = previousState.timeControl
-        val pendingPremove = previousState.queuedPremove
+        var remainingQueue = if (settings.value.premovesEnabled) {
+            previousState.queuedPremoves
+        } else {
+            emptyList()
+        }
 
         var updatedClock = advanceClockAfterMove(move.color, snapshot.isGameOver)
         var finalSnapshot = chessEngine.snapshot()
@@ -963,12 +1104,13 @@ class GameViewModel private constructor(
         var skipSlide = fromDrag
 
         var premoveExecuted = false
-        // Attempt automatic execution of queued premove if it belongs to the new sideToMove
+        // Attempt automatic FIFO execution of queued premove head if it belongs to the new sideToMove
         if (!finalSnapshot.isGameOver &&
-            pendingPremove != null &&
-            pendingPremove.piece.color == finalSnapshot.sideToMove
+            remainingQueue.isNotEmpty() &&
+            remainingQueue.first().piece.color == finalSnapshot.sideToMove
         ) {
-            val premoveResult = executeQueuedPremove(pendingPremove)
+            val head = remainingQueue.first()
+            val premoveResult = executeQueuedPremove(head)
             if (premoveResult is EngineMoveResult.Success) {
                 updatedClock = advanceClockAfterMove(
                     movedColor = premoveResult.move.color,
@@ -976,10 +1118,16 @@ class GameViewModel private constructor(
                 )
                 finalSnapshot = chessEngine.snapshot()
                 displayedMove = premoveResult.move
-                // Always animate auto-executed premove smoothly across the board
-                skipSlide = false
+                remainingQueue = if (finalSnapshot.isGameOver) emptyList() else remainingQueue.drop(1)
+                // Avoid duplicate sprite slide if another chained premove immediately moves this same piece further
+                skipSlide = remainingQueue.any { it.from == displayedMove.to }
                 premoveExecuted = true
+            } else {
+                // Cancel the entire remaining premove chain when the head premove is illegal
+                remainingQueue = emptyList()
             }
+        } else if (finalSnapshot.isGameOver) {
+            remainingQueue = emptyList()
         }
 
         _uiState.value = buildLiveUiState(
@@ -989,7 +1137,7 @@ class GameViewModel private constructor(
             playerSide = previousState.playerSide,
             animatedMove = displayedMove,
             skipSlideAnimation = skipSlide,
-            queuedPremove = null,
+            queuedPremoves = remainingQueue,
             drawOfferState = DrawOfferState.NONE,
             drawOfferedBy = null,
             showGameOverDialog = finalSnapshot.isGameOver
@@ -1199,7 +1347,7 @@ class GameViewModel private constructor(
         playerSide: PieceColor = PieceColor.WHITE,
         animatedMove: EngineMove? = null,
         skipSlideAnimation: Boolean = false,
-        queuedPremove: BoardPremove? = null,
+        queuedPremoves: List<BoardPremove> = emptyList(),
         drawOfferState: DrawOfferState = DrawOfferState.NONE,
         drawOfferedBy: PieceColor? = null,
         showGameOverDialog: Boolean = false
@@ -1215,17 +1363,21 @@ class GameViewModel private constructor(
                 skipSlideAnimation = skipSlideAnimation
             )
         }
+        val displayedPieces = PremoveCalculator.applyVirtualPremoves(
+            basePieces = snapshot.pieces,
+            premoves = queuedPremoves
+        )
         return GameUiState(
             timeControl = timeControl,
             playerSide = playerSide,
             boardState = ChessBoardState(
-                pieces = snapshot.pieces,
+                pieces = displayedPieces,
                 selectedSquare = null,
                 legalTargets = emptyList(),
                 lastMove = snapshot.lastMove?.toBoardMove(),
                 checkedKingSquare = snapshot.checkedKingSquare,
                 lastMoveAnimation = moveAnimation,
-                queuedPremove = queuedPremove,
+                queuedPremoves = queuedPremoves,
                 isPremoveSelection = false,
                 positionVersion = ++versionCounter
             ),
@@ -1235,7 +1387,8 @@ class GameViewModel private constructor(
             moveHistory = snapshot.moveHistory,
             movePairs = GameHistoryFormatter.toMovePairs(snapshot.moveHistory),
             viewedPlyIndex = null,
-            queuedPremove = queuedPremove,
+            queuedPremoves = queuedPremoves,
+            premovesEnabled = settings.value.premovesEnabled,
             clock = clockSnapshot,
             drawOfferState = drawOfferState,
             drawOfferedBy = drawOfferedBy,
