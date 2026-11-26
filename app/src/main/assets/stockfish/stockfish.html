@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Stockfish Engine Host</title>
+</head>
+<body>
+<script>
+(function () {
+  var worker = null;
+  var pendingCommands = [];
+  var fallbackAttempted = false;
+
+  function emitOutput(data) {
+    var text = typeof data === 'string' ? data : String(data == null ? '' : data);
+    if (window.AndroidStockfishBridge && typeof window.AndroidStockfishBridge.onUciOutput === 'function') {
+      window.AndroidStockfishBridge.onUciOutput(text);
+    }
+  }
+
+  function emitError(message) {
+    if (window.AndroidStockfishBridge && typeof window.AndroidStockfishBridge.onEngineError === 'function') {
+      window.AndroidStockfishBridge.onEngineError(String(message || 'Stockfish worker error'));
+    }
+  }
+
+  function flushPending() {
+    if (!worker) return;
+    while (pendingCommands.length > 0) {
+      var cmd = pendingCommands.shift();
+      worker.postMessage(cmd);
+    }
+  }
+
+  function startWorker(scriptPath) {
+    try {
+      if (worker) {
+        try { worker.terminate(); } catch (_) {}
+        worker = null;
+      }
+      worker = new Worker(scriptPath);
+      worker.onmessage = function (e) {
+        emitOutput(e && e.data !== undefined ? e.data : '');
+      };
+      worker.onerror = function (err) {
+        if (!fallbackAttempted && scriptPath.indexOf('stockfish.wasm.js') !== -1) {
+          fallbackAttempted = true;
+          startWorker('stockfish.js');
+          return;
+        }
+        var msg = (err && err.message) ? err.message : 'Stockfish worker error';
+        emitError(msg);
+      };
+      flushPending();
+    } catch (err) {
+      if (!fallbackAttempted && scriptPath.indexOf('stockfish.wasm.js') !== -1) {
+        fallbackAttempted = true;
+        startWorker('stockfish.js');
+        return;
+      }
+      emitError(err && err.message ? err.message : 'Failed to create Stockfish Worker');
+    }
+  }
+
+  window.sendUci = function (cmd) {
+    if (typeof cmd !== 'string' || !cmd) return;
+    if (!worker) {
+      pendingCommands.push(cmd);
+      return;
+    }
+    worker.postMessage(cmd);
+  };
+
+  window.terminateStockfish = function () {
+    pendingCommands = [];
+    if (worker) {
+      try { worker.terminate(); } catch (_) {}
+      worker = null;
+    }
+  };
+
+  var preferWasm = typeof WebAssembly === 'object';
+  startWorker(preferWasm ? 'stockfish.wasm.js' : 'stockfish.js');
+})();
+</script>
+</body>
+</html>

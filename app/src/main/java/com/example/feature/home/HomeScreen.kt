@@ -220,22 +220,13 @@ private fun HomeTopHeader(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Box(
+            Image(
+                painter = painterResource(R.drawable.ic_app_logo),
+                contentDescription = stringResource(R.string.cd_app_logo),
                 modifier = Modifier
                     .size(46.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(colors.accentGreenBevel)
-                    .padding(bottom = 3.dp)
-                    .clip(RoundedCornerShape(11.dp))
-                    .background(colors.accentGreen),
-                contentAlignment = Alignment.Center
-            ) {
-                Image(
-                    painter = painterResource(R.drawable.piece_wn),
-                    contentDescription = stringResource(R.string.cd_app_logo),
-                    modifier = Modifier.size(32.dp)
-                )
-            }
+            )
 
             Column {
                 Text(
