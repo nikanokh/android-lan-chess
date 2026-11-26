@@ -1,7 +1,9 @@
 package com.example
 
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -9,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -16,6 +19,11 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
+import com.example.core.analysis.AnalyzerPreferences
+import com.example.core.analysis.EvalBarPosition
+import com.example.core.analysis.EvalScoreDisplay
+import com.example.feature.analysis.AnalyzerSettingsDialog
+import com.example.feature.analysis.EvaluationBar
 import com.example.core.chess.ChesslibChessEngine
 import com.example.core.chess.EngineMoveResult
 import com.example.core.ui.board.BoardCoordinates
@@ -326,5 +334,75 @@ class ChessBoardUiTest {
         assertNull(controller.state.pieces[e7])
         assertNotNull(controller.state.pieces[e5])
         assertEquals(true, controller.state.lastMoveAnimation?.skipSlideAnimation)
+    }
+
+    @Test
+    fun evaluationBar_supportsLeftTopSeparateAndHiddenModes_andSettingsDialogUpdatesPrefs() {
+        var prefs by mutableStateOf(
+            AnalyzerPreferences(
+                showEvalBar = true,
+                evalBarPosition = EvalBarPosition.LEFT,
+                evalScoreDisplay = EvalScoreDisplay.SEPARATE
+            )
+        )
+        var showSettings by mutableStateOf(false)
+
+        composeRule.setContent {
+            ChessLanTheme(darkTheme = true) {
+                if (prefs.showEvalBar) {
+                    EvaluationBar(
+                        cp = 108,
+                        mate = null,
+                        fen = null,
+                        flipped = false,
+                        position = prefs.evalBarPosition,
+                        scoreDisplay = prefs.evalScoreDisplay,
+                        modifier = if (prefs.evalBarPosition == EvalBarPosition.TOP) {
+                            Modifier.width(320.dp)
+                        } else {
+                            Modifier.height(320.dp)
+                        }
+                    )
+                }
+                if (showSettings) {
+                    AnalyzerSettingsDialog(
+                        preferences = prefs,
+                        onDismiss = { showSettings = false },
+                        onUpdatePreferences = { transform -> prefs = transform(prefs) },
+                        onResetDefaults = { prefs = AnalyzerPreferences() }
+                    )
+                }
+            }
+        }
+
+        // 1. Vertical LEFT + SEPARATE badge below bar
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("evaluation_bar").assertIsDisplayed()
+        composeRule.onNodeWithTag("eval_bar_separate_badge").assertIsDisplayed()
+        composeRule.onNodeWithTag("eval_bar_label").assertTextEquals("+1.08")
+
+        // 2. Horizontal TOP + SEPARATE badge to the right + HIDDEN hides text
+        showSettings = true
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("eval_bar_pos_top").performClick()
+        composeRule.waitForIdle()
+        assertEquals(EvalBarPosition.TOP, prefs.evalBarPosition)
+        assertTrue(prefs.showEvalBar)
+
+        val barBounds = composeRule.onNodeWithTag("evaluation_bar").fetchSemanticsNode().boundsInRoot
+        val badgeBounds = composeRule.onNodeWithTag("eval_bar_separate_badge").fetchSemanticsNode().boundsInRoot
+        assertTrue("Separate badge should be on right side of top bar", badgeBounds.right >= barBounds.right - 2f)
+
+        composeRule.onNodeWithTag("eval_score_hidden").performClick()
+        composeRule.waitForIdle()
+        assertEquals(EvalScoreDisplay.HIDDEN, prefs.evalScoreDisplay)
+        composeRule.onNodeWithTag("eval_bar_label").assertDoesNotExist()
+        composeRule.onNodeWithTag("eval_bar_separate_badge").assertDoesNotExist()
+
+        // 3. Disabling eval bar hides it completely
+        composeRule.onNodeWithTag("eval_bar_pos_off").performClick()
+        composeRule.waitForIdle()
+        assertEquals(false, prefs.showEvalBar)
+        composeRule.onNodeWithTag("evaluation_bar").assertDoesNotExist()
     }
 }

@@ -30,6 +30,7 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.EmojiEvents
 import androidx.compose.material.icons.rounded.FirstPage
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Handshake
@@ -798,15 +799,97 @@ fun DrawOfferBanner(
     } else {
         drawOfferState == DrawOfferState.SENT || drawOfferState == DrawOfferState.RECEIVED
     }
+    ActionOfferBanner(
+        message = message,
+        isPending = isActionable || drawOfferState == DrawOfferState.SENT,
+        isActionable = isActionable,
+        bannerTestTag = "draw_offer_banner",
+        declineTestTag = "decline_draw_button",
+        acceptTestTag = "accept_draw_button",
+        onAccept = onAcceptDraw,
+        onDecline = onDeclineDraw,
+        modifier = modifier
+    )
+}
+
+@Composable
+fun TakebackRequestBanner(
+    takebackOfferState: DrawOfferState,
+    onAcceptTakeback: () -> Unit,
+    onDeclineTakeback: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    if (takebackOfferState == DrawOfferState.NONE || takebackOfferState == DrawOfferState.ACCEPTED) return
+    val message = when (takebackOfferState) {
+        DrawOfferState.SENT -> stringResource(R.string.game_takeback_sent_waiting)
+        DrawOfferState.RECEIVED -> stringResource(R.string.game_takeback_received)
+        DrawOfferState.DECLINED -> stringResource(R.string.game_takeback_declined)
+        DrawOfferState.NONE, DrawOfferState.ACCEPTED -> ""
+    }
+    val isActionable = takebackOfferState == DrawOfferState.RECEIVED
+    ActionOfferBanner(
+        message = message,
+        isPending = takebackOfferState == DrawOfferState.SENT || isActionable,
+        isActionable = isActionable,
+        bannerTestTag = "takeback_request_banner",
+        declineTestTag = "decline_takeback_button",
+        acceptTestTag = "accept_takeback_button",
+        onAccept = onAcceptTakeback,
+        onDecline = onDeclineTakeback,
+        modifier = modifier
+    )
+}
+
+@Composable
+fun RematchRequestBanner(
+    rematchOfferState: DrawOfferState,
+    onAcceptRematch: () -> Unit,
+    onDeclineRematch: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    if (rematchOfferState == DrawOfferState.NONE || rematchOfferState == DrawOfferState.ACCEPTED) return
+    val message = when (rematchOfferState) {
+        DrawOfferState.SENT -> stringResource(R.string.game_rematch_sent_waiting)
+        DrawOfferState.RECEIVED -> stringResource(R.string.game_rematch_received)
+        DrawOfferState.DECLINED -> stringResource(R.string.game_rematch_declined)
+        DrawOfferState.NONE, DrawOfferState.ACCEPTED -> ""
+    }
+    val isActionable = rematchOfferState == DrawOfferState.RECEIVED
+    ActionOfferBanner(
+        message = message,
+        isPending = rematchOfferState == DrawOfferState.SENT || isActionable,
+        isActionable = isActionable,
+        bannerTestTag = "rematch_request_banner",
+        declineTestTag = "decline_rematch_button",
+        acceptTestTag = "accept_rematch_button",
+        onAccept = onAcceptRematch,
+        onDecline = onDeclineRematch,
+        modifier = modifier
+    )
+}
+
+@Composable
+private fun ActionOfferBanner(
+    message: String,
+    isPending: Boolean,
+    isActionable: Boolean,
+    bannerTestTag: String,
+    declineTestTag: String,
+    acceptTestTag: String,
+    onAccept: () -> Unit,
+    onDecline: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = ChessTheme.colors
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .testTag("draw_offer_banner"),
+            .testTag(bannerTestTag),
         shape = RoundedCornerShape(10.dp),
-        color = if (isActionable || drawOfferState == DrawOfferState.SENT) colors.accentAmberContainer else colors.surfaceCard,
+        color = if (isPending) colors.accentAmberContainer else colors.surfaceCard,
         border = BorderStroke(
             1.dp,
-            if (isActionable || drawOfferState == DrawOfferState.SENT) colors.accentAmber.copy(alpha = 0.6f) else colors.borderSubtle
+            if (isPending) colors.accentAmber.copy(alpha = 0.6f) else colors.borderSubtle
         )
     ) {
         Row(
@@ -829,14 +912,14 @@ fun DrawOfferBanner(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     OutlinedButton(
-                        onClick = onDeclineDraw,
+                        onClick = onDecline,
                         shape = RoundedCornerShape(8.dp),
                         border = BorderStroke(1.dp, colors.accentCoral.copy(alpha = 0.65f)),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.accentCoral),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                         modifier = Modifier
                             .height(36.dp)
-                            .testTag("decline_draw_button")
+                            .testTag(declineTestTag)
                     ) {
                         Text(
                             text = stringResource(R.string.game_action_decline),
@@ -844,7 +927,7 @@ fun DrawOfferBanner(
                         )
                     }
                     Button(
-                        onClick = onAcceptDraw,
+                        onClick = onAccept,
                         shape = RoundedCornerShape(8.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = colors.accentGreen,
@@ -853,7 +936,7 @@ fun DrawOfferBanner(
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                         modifier = Modifier
                             .height(36.dp)
-                            .testTag("accept_draw_button")
+                            .testTag(acceptTestTag)
                     ) {
                         Text(
                             text = stringResource(R.string.game_action_accept),
@@ -1021,44 +1104,142 @@ fun ResignConfirmDialog(
 }
 
 @Composable
+fun ExitConfirmDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val colors = ChessTheme.colors
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        modifier = Modifier.testTag("exit_confirm_dialog"),
+        containerColor = colors.surfaceElevated,
+        title = {
+            Text(
+                text = stringResource(R.string.game_exit_confirm_title),
+                style = MaterialTheme.typography.titleMedium,
+                color = colors.textPrimary
+            )
+        },
+        text = {
+            Text(
+                text = stringResource(R.string.game_exit_confirm_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.textSecondary
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(containerColor = colors.accentCoral),
+                modifier = Modifier.testTag("confirm_exit_forfeit_button")
+            ) {
+                Text(stringResource(R.string.game_action_exit_forfeit))
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.testTag("cancel_exit_button")
+            ) {
+                Text(stringResource(R.string.game_action_stay))
+            }
+        }
+    )
+}
+
+@Composable
 fun GameOverDialog(
     outcome: GameOutcome,
     plyCount: Int,
     onNewGame: () -> Unit,
-    onViewBoard: () -> Unit,
-    isLanMatch: Boolean = false
+    isLanMatch: Boolean = false,
+    playerSide: PieceColor = PieceColor.WHITE,
+    rematchOfferState: DrawOfferState = DrawOfferState.NONE,
+    onAcceptRematch: () -> Unit = {},
+    onDeclineRematch: () -> Unit = {},
+    onExitMatch: (() -> Unit)? = null
 ) {
     val colors = ChessTheme.colors
+    val isDraw = outcome.result == GameResult.DRAW ||
+        outcome.result == GameResult.ABORTED ||
+        outcome.result == GameResult.IN_PROGRESS
+    val isLocalPerspectiveWin = when (outcome.result) {
+        GameResult.WHITE_WIN -> !isLanMatch || playerSide == PieceColor.WHITE
+        GameResult.BLACK_WIN -> !isLanMatch || playerSide == PieceColor.BLACK
+        else -> false
+    }
+
+    val accentColor = when {
+        isDraw -> colors.accentAmber
+        isLocalPerspectiveWin -> colors.accentGreen
+        else -> colors.accentCoral
+    }
+    val headlineText = when {
+        outcome.result == GameResult.DRAW -> stringResource(R.string.game_over_draw)
+        isLanMatch && isLocalPerspectiveWin -> stringResource(R.string.game_over_victory)
+        isLanMatch -> stringResource(R.string.game_over_defeat)
+        outcome.result == GameResult.WHITE_WIN -> stringResource(R.string.game_over_white_wins)
+        outcome.result == GameResult.BLACK_WIN -> stringResource(R.string.game_over_black_wins)
+        else -> stringResource(R.string.game_over_title)
+    }
     val scoreText = when (outcome.result) {
         GameResult.WHITE_WIN -> "1 — 0"
         GameResult.BLACK_WIN -> "0 — 1"
         GameResult.DRAW -> "½ — ½"
         else -> "—"
     }
+    val outcomeIcon = when {
+        isDraw -> Icons.Rounded.Handshake
+        isLocalPerspectiveWin -> Icons.Rounded.EmojiEvents
+        else -> Icons.Rounded.Flag
+    }
 
     AlertDialog(
-        onDismissRequest = onViewBoard,
+        onDismissRequest = {},
         modifier = Modifier.testTag("game_over_dialog"),
         containerColor = colors.surfaceElevated,
         title = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                Surface(
+                    shape = CircleShape,
+                    color = accentColor.copy(alpha = 0.16f),
+                    border = BorderStroke(1.dp, accentColor.copy(alpha = 0.5f)),
+                    modifier = Modifier.size(52.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = outcomeIcon,
+                            contentDescription = null,
+                            tint = accentColor,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                }
                 Text(
-                    text = scoreText,
-                    style = MaterialTheme.typography.headlineMedium.copy(
-                        fontFamily = MonoFontFamily,
-                        fontWeight = FontWeight.Bold
-                    ),
-                    color = colors.accentGreen
+                    text = headlineText,
+                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                    color = accentColor,
+                    modifier = Modifier.testTag("game_over_headline")
                 )
-                Text(
-                    text = stringResource(R.string.game_over_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = colors.textPrimary
-                )
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = colors.surfaceCard,
+                    border = BorderStroke(1.dp, colors.borderSubtle)
+                ) {
+                    Text(
+                        text = scoreText,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontFamily = MonoFontFamily,
+                            fontWeight = FontWeight.SemiBold
+                        ),
+                        color = colors.textPrimary,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                    )
+                }
             }
         },
         text = {
@@ -1077,29 +1258,87 @@ fun GameOverDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.textSecondary
                 )
+                if (isLanMatch && rematchOfferState != DrawOfferState.NONE && rematchOfferState != DrawOfferState.ACCEPTED) {
+                    val rematchNotice = when (rematchOfferState) {
+                        DrawOfferState.SENT -> stringResource(R.string.game_rematch_sent_waiting)
+                        DrawOfferState.RECEIVED -> stringResource(R.string.game_rematch_received)
+                        DrawOfferState.DECLINED -> stringResource(R.string.game_rematch_declined)
+                        DrawOfferState.NONE, DrawOfferState.ACCEPTED -> ""
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = colors.accentAmberContainer,
+                        border = BorderStroke(1.dp, colors.accentAmber.copy(alpha = 0.55f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp)
+                            .testTag("game_over_rematch_status")
+                    ) {
+                        Text(
+                            text = rematchNotice,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = colors.textPrimary,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                        )
+                    }
+                }
             }
         },
         confirmButton = {
-            Button(
-                onClick = onNewGame,
-                colors = ButtonDefaults.buttonColors(containerColor = colors.accentGreen),
-                modifier = Modifier.testTag("game_over_new_game_button")
-            ) {
-                Text(
-                    if (isLanMatch) {
-                        stringResource(R.string.game_action_leave_room)
-                    } else {
-                        stringResource(R.string.game_action_new_game)
-                    }
-                )
+            if (isLanMatch && rematchOfferState == DrawOfferState.RECEIVED) {
+                Button(
+                    onClick = onAcceptRematch,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = colors.accentGreen,
+                        contentColor = colors.textPrimary
+                    ),
+                    modifier = Modifier.testTag("accept_rematch_button")
+                ) {
+                    Text(stringResource(R.string.game_action_accept))
+                }
+            } else {
+                Button(
+                    onClick = onNewGame,
+                    enabled = !isLanMatch || rematchOfferState != DrawOfferState.SENT,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = colors.accentGreen,
+                        contentColor = colors.textPrimary
+                    ),
+                    modifier = Modifier.testTag("game_over_new_game_button")
+                ) {
+                    Text(
+                        if (isLanMatch && rematchOfferState == DrawOfferState.SENT) {
+                            stringResource(R.string.game_rematch_sent_waiting).substringAfter("• ")
+                        } else {
+                            stringResource(R.string.game_action_new_game)
+                        }
+                    )
+                }
             }
         },
         dismissButton = {
-            OutlinedButton(
-                onClick = onViewBoard,
-                modifier = Modifier.testTag("game_over_view_board_button")
-            ) {
-                Text(stringResource(R.string.game_action_view_board))
+            if (isLanMatch && rematchOfferState == DrawOfferState.RECEIVED) {
+                OutlinedButton(
+                    onClick = onDeclineRematch,
+                    border = BorderStroke(1.dp, colors.accentCoral.copy(alpha = 0.65f)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.accentCoral),
+                    modifier = Modifier.testTag("decline_rematch_button")
+                ) {
+                    Text(stringResource(R.string.game_action_decline))
+                }
+            } else if (onExitMatch != null) {
+                OutlinedButton(
+                    onClick = onExitMatch,
+                    modifier = Modifier.testTag("game_over_exit_button")
+                ) {
+                    Text(
+                        if (isLanMatch) {
+                            stringResource(R.string.game_action_leave_room)
+                        } else {
+                            stringResource(R.string.game_action_exit)
+                        }
+                    )
+                }
             }
         }
     )
@@ -1113,7 +1352,8 @@ fun GameMenuSheet(
     onShowPgn: () -> Unit,
     onNewGame: () -> Unit,
     onDismiss: () -> Unit,
-    isLanMatch: Boolean = false
+    isLanMatch: Boolean = false,
+    onLeaveRoom: (() -> Unit)? = null
 ) {
     val colors = ChessTheme.colors
     ModalBottomSheet(
@@ -1132,18 +1372,20 @@ fun GameMenuSheet(
                 color = colors.textPrimary,
                 modifier = Modifier.padding(bottom = 4.dp)
             )
-            if (!isLanMatch) {
-                MenuSheetItem(
-                    icon = Icons.AutoMirrored.Rounded.Undo,
-                    label = stringResource(R.string.game_action_undo),
-                    enabled = canUndo,
-                    testTag = "menu_undo_item",
-                    onClick = {
-                        onUndo()
-                        onDismiss()
-                    }
-                )
-            }
+            MenuSheetItem(
+                icon = Icons.AutoMirrored.Rounded.Undo,
+                label = if (isLanMatch) {
+                    stringResource(R.string.game_action_takeback_request)
+                } else {
+                    stringResource(R.string.game_action_undo)
+                },
+                enabled = canUndo,
+                testTag = "menu_undo_item",
+                onClick = {
+                    onUndo()
+                    onDismiss()
+                }
+            )
             MenuSheetItem(
                 icon = Icons.Rounded.Description,
                 label = stringResource(R.string.game_action_export_pgn),
@@ -1155,12 +1397,8 @@ fun GameMenuSheet(
                 }
             )
             MenuSheetItem(
-                icon = if (isLanMatch) Icons.Rounded.Close else Icons.Rounded.Refresh,
-                label = if (isLanMatch) {
-                    stringResource(R.string.game_action_leave_room)
-                } else {
-                    stringResource(R.string.game_action_new_game)
-                },
+                icon = Icons.Rounded.Refresh,
+                label = stringResource(R.string.game_action_new_game),
                 enabled = true,
                 testTag = "menu_new_game_item",
                 onClick = {
@@ -1168,6 +1406,18 @@ fun GameMenuSheet(
                     onDismiss()
                 }
             )
+            if (isLanMatch && onLeaveRoom != null) {
+                MenuSheetItem(
+                    icon = Icons.Rounded.Close,
+                    label = stringResource(R.string.game_action_leave_room),
+                    enabled = true,
+                    testTag = "menu_leave_room_item",
+                    onClick = {
+                        onDismiss()
+                        onLeaveRoom()
+                    }
+                )
+            }
             Spacer(modifier = Modifier.height(16.dp))
         }
     }

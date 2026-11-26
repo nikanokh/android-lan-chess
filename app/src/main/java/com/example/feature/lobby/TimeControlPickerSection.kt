@@ -11,18 +11,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -41,7 +37,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.core.ui.components.ChessSurfaceCard
@@ -338,7 +333,7 @@ private fun CustomTimeControlDialog(
             )
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
@@ -348,12 +343,13 @@ private fun CustomTimeControlDialog(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 12.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         Text(
                             text = preview.label,
-                            style = MaterialTheme.typography.headlineSmall.copy(
+                            style = MaterialTheme.typography.headlineMedium.copy(
                                 fontFamily = MonoFontFamily,
                                 fontWeight = FontWeight.Bold
                             ),
@@ -361,31 +357,29 @@ private fun CustomTimeControlDialog(
                             modifier = Modifier.testTag("custom_time_preview_label")
                         )
                         Text(
-                            text = categoryLabel,
+                            text = "$categoryLabel · $minutes мин + $increment сек/ход",
                             style = MaterialTheme.typography.bodySmall,
                             color = colors.textSecondary
                         )
                     }
                 }
 
-                // Minutes control
-                CustomStepperSlider(
-                    title = stringResource(R.string.time_control_custom_minutes, minutes),
+                // Minutes slider
+                CustomTimeSlider(
+                    title = "Минут на партию",
+                    valueLabel = "$minutes мин",
                     value = minutes,
                     valueRange = 1..180,
-                    onValueChange = { minutes = it },
-                    minusTag = "custom_minutes_minus",
-                    plusTag = "custom_minutes_plus"
+                    onValueChange = { minutes = it }
                 )
 
-                // Increment control
-                CustomStepperSlider(
-                    title = stringResource(R.string.time_control_custom_increment, increment),
+                // Increment slider
+                CustomTimeSlider(
+                    title = "Добавление за ход",
+                    valueLabel = "+$increment сек",
                     value = increment,
                     valueRange = 0..60,
-                    onValueChange = { increment = it },
-                    minusTag = "custom_increment_minus",
-                    plusTag = "custom_increment_plus"
+                    onValueChange = { increment = it }
                 )
             }
         },
@@ -407,16 +401,15 @@ private fun CustomTimeControlDialog(
 }
 
 @Composable
-private fun CustomStepperSlider(
+private fun CustomTimeSlider(
     title: String,
+    valueLabel: String,
     value: Int,
     valueRange: IntRange,
-    onValueChange: (Int) -> Unit,
-    minusTag: String,
-    plusTag: String
+    onValueChange: (Int) -> Unit
 ) {
     val colors = ChessTheme.colors
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -427,45 +420,19 @@ private fun CustomStepperSlider(
                 style = MaterialTheme.typography.labelLarge,
                 color = colors.textPrimary
             )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(
-                    onClick = { onValueChange((value - 1).coerceIn(valueRange)) },
-                    enabled = value > valueRange.first,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .testTag(minusTag)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Remove,
-                        contentDescription = null,
-                        tint = colors.textPrimary
-                    )
-                }
-                Spacer(modifier = Modifier.width(4.dp))
+            Surface(
+                shape = RoundedCornerShape(6.dp),
+                color = colors.accentGreenContainer
+            ) {
                 Text(
-                    text = value.toString(),
-                    style = MaterialTheme.typography.titleSmall.copy(
+                    text = valueLabel,
+                    style = MaterialTheme.typography.labelLarge.copy(
                         fontFamily = MonoFontFamily,
                         fontWeight = FontWeight.Bold
                     ),
                     color = colors.accentGreen,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.width(34.dp)
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                 )
-                Spacer(modifier = Modifier.width(4.dp))
-                IconButton(
-                    onClick = { onValueChange((value + 1).coerceIn(valueRange)) },
-                    enabled = value < valueRange.last,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .testTag(plusTag)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Add,
-                        contentDescription = null,
-                        tint = colors.textPrimary
-                    )
-                }
             }
         }
         Slider(

@@ -1,6 +1,7 @@
 package com.example
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -241,6 +242,8 @@ class GameScreenUiTest {
         assertEquals(GameResult.DRAW, viewModel.uiState.value.outcome?.result)
         assertEquals(GameTerminationReason.DRAW_BY_AGREEMENT, viewModel.uiState.value.outcome?.reason)
         composeRule.onNodeWithTag("game_over_dialog").assertIsDisplayed()
+        composeRule.onNodeWithTag("game_over_headline").assertTextEquals("Ничья")
+        composeRule.onNodeWithTag("game_over_view_board_button").assertDoesNotExist()
 
         // 3. Start new game & test resign confirmation dialog
         composeRule.onNodeWithTag("game_over_new_game_button").performClick()
@@ -257,6 +260,8 @@ class GameScreenUiTest {
         assertEquals(GameResult.BLACK_WIN, viewModel.uiState.value.outcome?.result)
         assertEquals(GameTerminationReason.RESIGNATION, viewModel.uiState.value.outcome?.reason)
         composeRule.onNodeWithTag("game_over_dialog").assertIsDisplayed()
+        composeRule.onNodeWithTag("game_over_headline").assertTextEquals("Победа чёрных")
+        composeRule.onNodeWithTag("game_over_view_board_button").assertDoesNotExist()
     }
 
     @Test
@@ -285,5 +290,72 @@ class GameScreenUiTest {
         assertEquals(1, balance.whiteAdvantage)
         assertEquals(0, balance.blackAdvantage)
         assertEquals(1, balance.capturedByWhite.size)
+    }
+
+    @Test
+    fun exitDuringActiveGame_showsConfirmDialogAndForfeitsOnConfirm() {
+        val clock = TestElapsedClock()
+        val viewModel = createViewModel(clock)
+        viewModel.initializeSession(TimeControl.RAPID_10_0.id)
+        var navigatedOut = false
+
+        composeRule.setContent {
+            ChessLanTheme(darkTheme = true) {
+                val uiState = viewModel.uiState.collectAsStateWithLifecycle().value
+                val settings = viewModel.settings.collectAsStateWithLifecycle().value
+                GameScreenContent(
+                    uiState = uiState,
+                    settings = settings,
+                    onNavigateBack = { viewModel.requestExit { navigatedOut = true } },
+                    onSquareTap = viewModel::onSquareTap,
+                    onMoveAttempt = viewModel::onMoveAttempt,
+                    onPromotionSelected = viewModel::onPromotionSelected,
+                    onPromotionDismissed = viewModel::onPromotionDismissed,
+                    onSelectPly = viewModel::viewPly,
+                    onJumpStart = viewModel::jumpToHistoryStart,
+                    onStepBack = viewModel::stepHistoryBackward,
+                    onStepForward = viewModel::stepHistoryForward,
+                    onReturnLive = viewModel::returnToLivePosition,
+                    onOfferDraw = viewModel::offerDraw,
+                    onAcceptDraw = viewModel::acceptDraw,
+                    onDeclineDraw = viewModel::declineDraw,
+                    onRequestResign = viewModel::requestResign,
+                    onConfirmResign = viewModel::confirmResignNow,
+                    onDismissResign = viewModel::dismissResignConfirm,
+                    onUndo = viewModel::undoMove,
+                    onNewGame = viewModel::resetGame,
+                    onDismissGameOver = viewModel::dismissGameOverDialog,
+                    onOpenPgn = viewModel::openPgnPreview,
+                    onDismissPgn = viewModel::dismissPgnPreview,
+                    onConfirmExit = { viewModel.confirmExitForfeit { navigatedOut = true } },
+                    onDismissExit = viewModel::dismissExitConfirm
+                )
+            }
+        }
+
+        // White plays 1. e4 -> now Black's turn; trying to leave opens exit confirm dialog
+        assertTrue(viewModel.onMoveAttempt(BoardSquare.fromAlgebraic("e2")!!, BoardSquare.fromAlgebraic("e4")!!, false))
+        viewModel.requestExit { navigatedOut = true }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("exit_confirm_dialog").assertIsDisplayed()
+        assertFalse(navigatedOut)
+
+        // Cancelling keeps match alive
+        composeRule.onNodeWithTag("cancel_exit_button").performClick()
+        composeRule.waitForIdle()
+        assertFalse(viewModel.uiState.value.isGameOver)
+        assertFalse(navigatedOut)
+
+        // Confirming exit records defeat for side to move (Black) and proceeds out
+        viewModel.requestExit { navigatedOut = true }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("confirm_exit_forfeit_button").performClick()
+        composeRule.waitForIdle()
+
+        assertTrue(navigatedOut)
+        assertTrue(viewModel.uiState.value.isGameOver)
+        assertEquals(GameResult.WHITE_WIN, viewModel.uiState.value.outcome?.result)
+        assertEquals(GameTerminationReason.RESIGNATION, viewModel.uiState.value.outcome?.reason)
     }
 }

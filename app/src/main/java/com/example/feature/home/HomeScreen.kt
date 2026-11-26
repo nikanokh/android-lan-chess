@@ -7,11 +7,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -26,15 +24,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
-import androidx.compose.material.icons.rounded.AddCircle
-import androidx.compose.material.icons.rounded.Devices
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.Wifi
-import androidx.compose.material.icons.rounded.WifiTethering
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -51,7 +45,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -67,16 +60,12 @@ import com.example.core.ui.components.ChessSurfaceCard
 import com.example.core.ui.components.SectionHeader
 import com.example.core.ui.theme.ChessDimensions
 import com.example.core.ui.theme.ChessTheme
-import com.example.core.ui.theme.MonoFontFamily
 import com.example.core.ui.theme.toSquareColors
 import com.example.domain.model.BoardTheme
-import com.example.domain.model.GameResult
-import com.example.domain.model.GameSummary
 
 @Composable
 fun HomeRoute(
     onPlayClick: () -> Unit,
-    onCreateGameClick: () -> Unit,
     onJoinGameClick: (ConnectionType) -> Unit,
     onHistoryClick: () -> Unit,
     onAnalysisClick: () -> Unit,
@@ -88,7 +77,6 @@ fun HomeRoute(
     HomeScreen(
         uiState = uiState,
         onPlayClick = onPlayClick,
-        onCreateGameClick = onCreateGameClick,
         onJoinGameClick = onJoinGameClick,
         onHistoryClick = onHistoryClick,
         onAnalysisClick = onAnalysisClick,
@@ -101,7 +89,6 @@ fun HomeRoute(
 fun HomeScreen(
     uiState: HomeUiState,
     onPlayClick: () -> Unit,
-    onCreateGameClick: () -> Unit,
     onJoinGameClick: (ConnectionType) -> Unit,
     onHistoryClick: () -> Unit,
     onAnalysisClick: () -> Unit,
@@ -147,86 +134,10 @@ fun HomeScreen(
             }
 
             item(key = "primary_actions") {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(IntrinsicSize.Max),
-                    horizontalArrangement = Arrangement.spacedBy(spacing.sm)
-                ) {
-                    MultiplayerActionCard(
-                        title = stringResource(R.string.action_create_game),
-                        subtitle = stringResource(R.string.action_create_game_desc),
-                        icon = Icons.Rounded.AddCircle,
-                        iconTint = colors.accentGreen,
-                        iconBg = colors.accentGreenContainer,
-                        onClick = onCreateGameClick,
-                        testTag = "home_create_game_button",
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                    )
-                    MultiplayerActionCard(
-                        title = stringResource(R.string.action_join_game),
-                        subtitle = stringResource(R.string.action_join_game_desc),
-                        icon = Icons.Rounded.Search,
-                        iconTint = colors.accentBlue,
-                        iconBg = colors.accentBlueContainer,
-                        onClick = { onJoinGameClick(ConnectionType.WIFI_LAN) },
-                        testTag = "home_join_game_button",
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                    )
-                }
-            }
-
-            item(key = "connection_modes") {
-                Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
-                    SectionHeader(title = stringResource(R.string.home_connection_modes_title))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(spacing.xs)
-                    ) {
-                        ConnectionModeChip(
-                            label = stringResource(R.string.connection_wifi_lan),
-                            icon = Icons.Rounded.Wifi,
-                            onClick = { onJoinGameClick(ConnectionType.WIFI_LAN) },
-                            testTag = "home_mode_wifi_lan",
-                            modifier = Modifier.weight(1f)
-                        )
-                        ConnectionModeChip(
-                            label = stringResource(R.string.connection_hotspot),
-                            icon = Icons.Rounded.WifiTethering,
-                            onClick = { onJoinGameClick(ConnectionType.HOTSPOT) },
-                            testTag = "home_mode_hotspot",
-                            modifier = Modifier.weight(1f)
-                        )
-                        ConnectionModeChip(
-                            label = stringResource(R.string.connection_wifi_direct),
-                            icon = Icons.Rounded.Devices,
-                            onClick = { onJoinGameClick(ConnectionType.WIFI_DIRECT) },
-                            testTag = "home_mode_wifi_direct",
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-            }
-
-            item(key = "last_game") {
-                Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
-                    SectionHeader(
-                        title = stringResource(R.string.home_last_game_title),
-                        trailingText = if (uiState.totalGamesCount > 0) {
-                            "${uiState.totalGamesCount}"
-                        } else {
-                            null
-                        }
-                    )
-                    LastGameCard(
-                        latestGame = uiState.latestGame,
-                        onOpenHistory = onHistoryClick
-                    )
-                }
+                JoinGameActionCard(
+                    onClick = { onJoinGameClick(ConnectionType.WIFI_LAN) },
+                    testTag = "home_join_game_button"
+                )
             }
 
             item(key = "quick_tools") {
@@ -495,12 +406,7 @@ private fun HomeHeroPlayCard(
 }
 
 @Composable
-private fun MultiplayerActionCard(
-    title: String,
-    subtitle: String,
-    icon: ImageVector,
-    iconTint: Color,
-    iconBg: Color,
+private fun JoinGameActionCard(
     onClick: () -> Unit,
     testTag: String,
     modifier: Modifier = Modifier
@@ -508,190 +414,53 @@ private fun MultiplayerActionCard(
     val colors = ChessTheme.colors
 
     ChessSurfaceCard(
-        modifier = modifier.testTag(testTag),
-        onClick = onClick,
-        contentPadding = PaddingValues(14.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(42.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(iconBg),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = iconTint,
-                modifier = Modifier.size(24.dp)
-            )
-        }
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            color = colors.textPrimary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = subtitle,
-            style = MaterialTheme.typography.bodySmall,
-            color = colors.textSecondary,
-            minLines = 2,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
-}
-
-@Composable
-private fun ConnectionModeChip(
-    label: String,
-    icon: ImageVector,
-    onClick: () -> Unit,
-    testTag: String,
-    modifier: Modifier = Modifier
-) {
-    val colors = ChessTheme.colors
-
-    Surface(
-        onClick = onClick,
         modifier = modifier
-            .height(60.dp)
-            .testTag(testTag),
-        shape = RoundedCornerShape(ChessTheme.radii.sm),
-        color = colors.backgroundSecondary,
-        border = BorderStroke(1.dp, colors.borderSubtle)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 6.dp, vertical = 6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = colors.accentGreen,
-                modifier = Modifier.size(19.dp)
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium,
-                color = colors.textPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
-}
-
-@Composable
-private fun LastGameCard(
-    latestGame: GameSummary?,
-    onOpenHistory: () -> Unit
-) {
-    val colors = ChessTheme.colors
-
-    ChessSurfaceCard(
-        modifier = Modifier
             .fillMaxWidth()
-            .testTag("home_last_game_card"),
-        onClick = onOpenHistory
+            .testTag(testTag),
+        onClick = onClick,
+        contentPadding = PaddingValues(16.dp)
     ) {
-        if (latestGame == null) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(colors.accentBlueContainer),
+                contentAlignment = Alignment.Center
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(colors.backgroundSecondary),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Image(
-                        painter = painterResource(R.drawable.piece_wp),
-                        contentDescription = null,
-                        modifier = Modifier.size(32.dp)
-                    )
-                }
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.home_last_game_empty_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = colors.textPrimary
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = stringResource(R.string.home_last_game_empty_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.textSecondary
-                    )
-                }
+                Icon(
+                    imageVector = Icons.Rounded.Search,
+                    contentDescription = null,
+                    tint = colors.accentBlue,
+                    modifier = Modifier.size(24.dp)
+                )
             }
-        } else {
-            val resultLabel = when (latestGame.result) {
-                GameResult.WHITE_WIN -> "1–0"
-                GameResult.BLACK_WIN -> "0–1"
-                GameResult.DRAW -> "½–½"
-                GameResult.IN_PROGRESS -> "В игре"
-                GameResult.ABORTED -> "Отменена"
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.action_join_game),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = colors.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = stringResource(R.string.action_join_game_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "${latestGame.whitePlayer} vs ${latestGame.blackPlayer}",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = colors.textPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = latestGame.timeControlLabel,
-                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
-                            color = colors.accentGreen
-                        )
-                        Text(
-                            text = "•",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = colors.textMuted
-                        )
-                        Text(
-                            text = stringResource(R.string.history_moves_count, latestGame.moveCount),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = colors.textSecondary
-                        )
-                    }
-                }
-
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = colors.accentGreenContainer
-                ) {
-                    Text(
-                        text = resultLabel,
-                        style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
-                        color = colors.accentGreen,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                    )
-                }
-            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                contentDescription = null,
+                tint = colors.textMuted
+            )
         }
     }
 }

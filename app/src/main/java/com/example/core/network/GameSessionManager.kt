@@ -24,6 +24,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -63,6 +64,10 @@ data class GameSessionState(
     val clockSnapshot: ClockSnapshot? = null,
     val drawOfferState: DrawOfferState = DrawOfferState.NONE,
     val drawOfferedBy: PieceColor? = null,
+    val takebackOfferState: DrawOfferState = DrawOfferState.NONE,
+    val takebackRequestedBy: PieceColor? = null,
+    val rematchOfferState: DrawOfferState = DrawOfferState.NONE,
+    val rematchRequestedBy: PieceColor? = null,
     val connectionStatus: ConnectionStatusUi = ConnectionStatusUi.LOCAL_PASS_AND_PLAY,
     val lastAnimatedMove: EngineMove? = null,
     val lastAnimatedMoveId: Long = 0L,
@@ -661,6 +666,103 @@ class GameSessionManager @Inject constructor(
         }
     }
 
+    suspend fun requestTakeback() {
+        val current = _sessionState.value
+        if (!current.isGameStarted) return
+        val snap = current.positionSnapshot ?: return
+        if (snap.isGameOver) return
+        val currentPly = snap.moveHistory.size
+        val pliesToUndo = if (snap.sideToMove == current.localColor) 2 else 1
+        if (currentPly < pliesToUndo) return
+        val targetPly = (currentPly - pliesToUndo).coerceAtLeast(0)
+        when (current.role) {
+            SessionRole.HOST -> activeServer?.submitHostTakebackRequest()
+            SessionRole.CLIENT -> {
+                val client = activeClient ?: return
+                client.send(
+                    NetworkMessageSerializer.createEnvelope(
+                        gameUuid = current.gameUuid,
+                        senderUuid = current.localPlayerUuid,
+                        type = NetworkMessageType.TAKEBACK_REQUEST,
+                        sequenceNumber = clientSequence.incrementAndGet(),
+                        roomSecret = current.roomSecret,
+                        payload = TakebackRequestPayload(
+                            requestedBy = current.localColor,
+                            targetPly = targetPly
+                        )
+                    )
+                )
+            }
+            SessionRole.NONE -> Unit
+        }
+    }
+
+    suspend fun respondToTakeback(accepted: Boolean) {
+        val current = _sessionState.value
+        if (!current.isGameStarted) return
+        when (current.role) {
+            SessionRole.HOST -> activeServer?.submitHostTakebackDecision(accepted)
+            SessionRole.CLIENT -> {
+                val client = activeClient ?: return
+                client.send(
+                    NetworkMessageSerializer.createEnvelope(
+                        gameUuid = current.gameUuid,
+                        senderUuid = current.localPlayerUuid,
+                        type = if (accepted) NetworkMessageType.TAKEBACK_ACCEPTED else NetworkMessageType.TAKEBACK_REJECTED,
+                        sequenceNumber = clientSequence.incrementAndGet(),
+                        roomSecret = current.roomSecret,
+                        payload = TakebackDecisionPayload(decidedBy = current.localColor, accepted = accepted)
+                    )
+                )
+            }
+            SessionRole.NONE -> Unit
+        }
+    }
+
+    suspend fun requestRematch() {
+        val current = _sessionState.value
+        if (!current.isGameStarted) return
+        when (current.role) {
+            SessionRole.HOST -> activeServer?.submitHostRematchRequest()
+            SessionRole.CLIENT -> {
+                val client = activeClient ?: return
+                client.send(
+                    NetworkMessageSerializer.createEnvelope(
+                        gameUuid = current.gameUuid,
+                        senderUuid = current.localPlayerUuid,
+                        type = NetworkMessageType.REMATCH_REQUEST,
+                        sequenceNumber = clientSequence.incrementAndGet(),
+                        roomSecret = current.roomSecret,
+                        payload = RematchRequestPayload(requestedBy = current.localColor)
+                    )
+                )
+            }
+            SessionRole.NONE -> Unit
+        }
+    }
+
+    suspend fun respondToRematch(accepted: Boolean) {
+        val current = _sessionState.value
+        if (!current.isGameStarted) return
+        when (current.role) {
+            SessionRole.HOST -> activeServer?.submitHostRematchDecision(accepted)
+            SessionRole.CLIENT -> {
+                val client = activeClient ?: return
+                client.send(
+                    NetworkMessageSerializer.createEnvelope(
+                        gameUuid = current.gameUuid,
+                        senderUuid = current.localPlayerUuid,
+                        type = if (accepted) NetworkMessageType.REMATCH_ACCEPTED else NetworkMessageType.REMATCH_REJECTED,
+                        sequenceNumber = clientSequence.incrementAndGet(),
+                        roomSecret = current.roomSecret,
+                        payload = RematchDecisionPayload(decidedBy = current.localColor, accepted = accepted)
+                    )
+                )
+            }
+            SessionRole.NONE -> Unit
+        }
+    }
+
     suspend fun resign() {
         val current = _sessionState.value
         if (!current.isGameStarted) return
@@ -681,6 +783,58 @@ class GameSessionManager @Inject constructor(
             }
             SessionRole.NONE -> Unit
         }
+    }
+
+    fun launchForfeitAndDisconnect() {
+        scope.launch {
+            forfeitAndDisconnect()
+        }
+    }
+
+    suspend fun forfeitAndDisconnect() {
+        val current = _sessionState.value
+        val isActiveUnfinished = current.isGameStarted && current.positionSnapshot?.isGameOver != true
+        if (isActiveUnfinished) {
+            when (current.role) {
+                SessionRole.HOST -> {
+                    activeServer?.submitHostResign()
+                    delay(120L)
+                }
+                SessionRole.CLIENT -> {
+                    val client = activeClient
+                    if (client != null) {
+                        runCatching {
+                            client.send(
+                                NetworkMessageSerializer.createEnvelope(
+                                    gameUuid = current.gameUuid,
+                                    senderUuid = current.localPlayerUuid,
+                                    type = NetworkMessageType.RESIGN,
+                                    sequenceNumber = clientSequence.incrementAndGet(),
+                                    roomSecret = current.roomSecret,
+                                    payload = ResignPayload(resigningColor = current.localColor)
+                                )
+                            )
+                            client.send(
+                                NetworkMessageSerializer.createEnvelope(
+                                    gameUuid = current.gameUuid,
+                                    senderUuid = current.localPlayerUuid,
+                                    type = NetworkMessageType.DISCONNECT,
+                                    sequenceNumber = clientSequence.incrementAndGet(),
+                                    roomSecret = current.roomSecret,
+                                    payload = DisconnectPayload(
+                                        playerUuid = current.localPlayerUuid,
+                                        reason = "Игрок покинул партию"
+                                    )
+                                )
+                            )
+                        }
+                        delay(120L)
+                    }
+                }
+                SessionRole.NONE -> Unit
+            }
+        }
+        disconnect()
     }
 
     override suspend fun disconnect() {
@@ -795,6 +949,67 @@ class GameSessionManager @Inject constructor(
                     it.copy(
                         drawOfferState = DrawOfferState.DECLINED,
                         drawOfferedBy = null
+                    )
+                }
+            }
+            NetworkMessageType.TAKEBACK_REQUEST -> {
+                val req = NetworkMessageSerializer.decodeEnvelopePayload<TakebackRequestPayload>(envelope).getOrNull()
+                    ?: return
+                val current = _sessionState.value
+                val nextState = if (req.requestedBy == current.localColor) {
+                    DrawOfferState.SENT
+                } else {
+                    DrawOfferState.RECEIVED
+                }
+                _sessionState.update {
+                    it.copy(
+                        takebackOfferState = nextState,
+                        takebackRequestedBy = req.requestedBy
+                    )
+                }
+            }
+            NetworkMessageType.TAKEBACK_ACCEPTED -> {
+                _sessionState.update {
+                    it.copy(
+                        takebackOfferState = DrawOfferState.NONE,
+                        takebackRequestedBy = null
+                    )
+                }
+            }
+            NetworkMessageType.TAKEBACK_REJECTED -> {
+                _sessionState.update {
+                    it.copy(
+                        takebackOfferState = DrawOfferState.DECLINED,
+                        takebackRequestedBy = null
+                    )
+                }
+            }
+            NetworkMessageType.REMATCH_REQUEST -> {
+                val req = NetworkMessageSerializer.decodeEnvelopePayload<RematchRequestPayload>(envelope).getOrNull()
+                    ?: return
+                val current = _sessionState.value
+                val nextState = if (req.requestedBy == current.localColor) {
+                    DrawOfferState.SENT
+                } else {
+                    DrawOfferState.RECEIVED
+                }
+                _sessionState.update {
+                    it.copy(
+                        rematchOfferState = nextState,
+                        rematchRequestedBy = req.requestedBy
+                    )
+                }
+            }
+            NetworkMessageType.REMATCH_ACCEPTED -> {
+                _sessionState.update {
+                    it.copy(rematchOfferState = DrawOfferState.ACCEPTED)
+                }
+            }
+            NetworkMessageType.REMATCH_REJECTED -> {
+                _sessionState.update {
+                    it.copy(
+                        rematchOfferState = DrawOfferState.DECLINED,
+                        rematchRequestedBy = null
                     )
                 }
             }
@@ -916,6 +1131,10 @@ class GameSessionManager @Inject constructor(
                 clockSnapshot = clockSnap,
                 drawOfferState = DrawOfferState.NONE,
                 drawOfferedBy = null,
+                takebackOfferState = DrawOfferState.NONE,
+                takebackRequestedBy = null,
+                rematchOfferState = DrawOfferState.NONE,
+                rematchRequestedBy = null,
                 lastAnimatedMove = null,
                 lastRejectionReason = null
             )
@@ -947,6 +1166,10 @@ class GameSessionManager @Inject constructor(
                 clockSnapshot = clockSnap,
                 drawOfferState = DrawOfferState.NONE,
                 drawOfferedBy = null,
+                takebackOfferState = DrawOfferState.NONE,
+                takebackRequestedBy = null,
+                rematchOfferState = DrawOfferState.NONE,
+                rematchRequestedBy = null,
                 lastAnimatedMove = committedMove ?: current.lastAnimatedMove,
                 lastAnimatedMoveId = if (committedMove != null) {
                     animatedMoveCounter.incrementAndGet()
@@ -969,11 +1192,20 @@ class GameSessionManager @Inject constructor(
                     if (mirrorEngine.applyMove(statePayload.uciMoves.last())) {
                         newMove = mirrorEngine.lastMove()
                     }
+                } else if (statePayload.uciMoves.size < currentMoves.size &&
+                    currentMoves.take(statePayload.uciMoves.size) == statePayload.uciMoves
+                ) {
+                    repeat(currentMoves.size - statePayload.uciMoves.size) {
+                        mirrorEngine.undoLastMove()
+                    }
                 } else {
                     mirrorEngine.reset()
                     statePayload.uciMoves.forEach { uci -> mirrorEngine.applyMove(uci) }
                     newMove = mirrorEngine.lastMove()
                 }
+            } else if (statePayload.result == null && mirrorEngine.snapshot().isGameOver) {
+                mirrorEngine.reset()
+                statePayload.uciMoves.forEach { uci -> mirrorEngine.applyMove(uci) }
             }
 
             applyExplicitTerminationLocked(
@@ -991,23 +1223,31 @@ class GameSessionManager @Inject constructor(
         }
 
         _sessionState.update { current ->
-            val drawState = when {
-                statePayload.drawOfferedBy == null -> {
-                    if (current.drawOfferState == DrawOfferState.DECLINED) {
-                        DrawOfferState.DECLINED
-                    } else {
-                        DrawOfferState.NONE
-                    }
-                }
-                statePayload.drawOfferedBy == current.localColor -> DrawOfferState.SENT
-                else -> DrawOfferState.RECEIVED
-            }
+            val drawState = resolveSyncOfferState(
+                remoteRequestedBy = statePayload.drawOfferedBy,
+                localColor = current.localColor,
+                previousState = current.drawOfferState
+            )
+            val takebackState = resolveSyncOfferState(
+                remoteRequestedBy = statePayload.takebackRequestedBy,
+                localColor = current.localColor,
+                previousState = current.takebackOfferState
+            )
+            val rematchState = resolveSyncOfferState(
+                remoteRequestedBy = statePayload.rematchRequestedBy,
+                localColor = current.localColor,
+                previousState = current.rematchOfferState
+            )
             current.copy(
                 isGameStarted = true,
                 positionSnapshot = snap,
                 clockSnapshot = clockSnap,
                 drawOfferState = drawState,
                 drawOfferedBy = statePayload.drawOfferedBy,
+                takebackOfferState = takebackState,
+                takebackRequestedBy = statePayload.takebackRequestedBy,
+                rematchOfferState = rematchState,
+                rematchRequestedBy = statePayload.rematchRequestedBy,
                 lastAnimatedMove = newlyAppliedMove ?: current.lastAnimatedMove,
                 lastAnimatedMoveId = if (newlyAppliedMove != null) {
                     animatedMoveCounter.incrementAndGet()
@@ -1041,9 +1281,27 @@ class GameSessionManager @Inject constructor(
                     DrawOfferState.ACCEPTED
                 } else {
                     DrawOfferState.NONE
-                }
+                },
+                takebackOfferState = DrawOfferState.NONE,
+                takebackRequestedBy = null
             )
         }
+    }
+
+    private fun resolveSyncOfferState(
+        remoteRequestedBy: PieceColor?,
+        localColor: PieceColor,
+        previousState: DrawOfferState
+    ): DrawOfferState = when {
+        remoteRequestedBy == null -> {
+            if (previousState == DrawOfferState.DECLINED) {
+                DrawOfferState.DECLINED
+            } else {
+                DrawOfferState.NONE
+            }
+        }
+        remoteRequestedBy == localColor -> DrawOfferState.SENT
+        else -> DrawOfferState.RECEIVED
     }
 
     private fun applyExplicitTerminationLocked(

@@ -86,39 +86,39 @@ fun BoardTheme.toSquareColors(): BoardSquareColors = when (this) {
         dark = ChessPalette.SquareDarkClassic,
         highlight = Color(0x88F6F669),
         check = Color(0xDDE04438),
-        selectedLight = Color(0xFFF5F682),
+        selectedLight = Color(0xFFF6F682),
         selectedDark = Color(0xFFBACA44),
-        lastMoveLight = Color(0xC8F5F682),
-        lastMoveDark = Color(0xC8B9CA43)
+        lastMoveLight = Color(0xCCF5F669),
+        lastMoveDark = Color(0xCCBACA2B)
     )
     BoardTheme.WALNUT_WOOD -> BoardSquareColors(
         light = ChessPalette.SquareLightWalnut,
         dark = ChessPalette.SquareDarkWalnut,
-        highlight = Color(0x88F5D76E),
+        highlight = Color(0x88F6DA78),
         check = Color(0xDDE04438),
-        selectedLight = Color(0xFFF7E28B),
-        selectedDark = Color(0xFFD5B153),
-        lastMoveLight = Color(0xC8F7E28B),
-        lastMoveDark = Color(0xC8CCA447)
+        selectedLight = Color(0xFFF6DA78),
+        selectedDark = Color(0xFFD5A94E),
+        lastMoveLight = Color(0xCCEAD17A),
+        lastMoveDark = Color(0xCCC99B45)
     )
     BoardTheme.SLATE_TOURNAMENT -> BoardSquareColors(
         light = ChessPalette.SquareLightSlate,
         dark = ChessPalette.SquareDarkSlate,
-        highlight = Color(0x8881B64C),
+        highlight = Color(0x889CD4F7),
         check = Color(0xDDE04438),
-        selectedLight = Color(0xFFB7D691),
-        selectedDark = Color(0xFF7CA45B),
-        lastMoveLight = Color(0xB89ED16A),
-        lastMoveDark = Color(0xB86D9952)
+        selectedLight = Color(0xFF9CD4F7),
+        selectedDark = Color(0xFF4F8EC9),
+        lastMoveLight = Color(0xC8A5D4F2),
+        lastMoveDark = Color(0xC85B8EC2)
     )
     BoardTheme.OCEAN_BLUE -> BoardSquareColors(
         light = ChessPalette.SquareLightOcean,
         dark = ChessPalette.SquareDarkOcean,
-        highlight = Color(0x88F6F669),
+        highlight = Color(0x887AD7D2),
         check = Color(0xDDE04438),
-        selectedLight = Color(0xFF9ACAEF),
-        selectedDark = Color(0xFF5D9BD1),
-        lastMoveLight = Color(0xC8F3EC8C),
-        lastMoveDark = Color(0xC88BB57A)
+        selectedLight = Color(0xFF7AD7D2),
+        selectedDark = Color(0xFF2EA4A3),
+        lastMoveLight = Color(0xC884DCD4),
+        lastMoveDark = Color(0xC8389C9E)
     )
 }

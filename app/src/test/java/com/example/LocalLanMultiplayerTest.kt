@@ -3,6 +3,7 @@ package com.example
 import com.example.core.chess.GameTerminationReason
 import com.example.core.chess.MonotonicTimeProvider
 import com.example.core.network.ConnectionType
+import com.example.core.network.DisconnectPayload
 import com.example.core.network.DrawDecisionPayload
 import com.example.core.network.DrawOfferPayload
 import com.example.core.network.GameFinishedPayload
@@ -21,8 +22,12 @@ import com.example.core.network.PlayerConnectedPayload
 import com.example.core.network.PongPayload
 import com.example.core.network.ReconnectRequestPayload
 import com.example.core.network.ReconnectResponsePayload
+import com.example.core.network.RematchDecisionPayload
+import com.example.core.network.RematchRequestPayload
 import com.example.core.network.ResignPayload
 import com.example.core.network.RoomInfoPayload
+import com.example.core.network.TakebackDecisionPayload
+import com.example.core.network.TakebackRequestPayload
 import com.example.core.network.WebSocketClient
 import com.example.core.ui.board.BoardSquare
 import com.example.domain.model.GameResult
@@ -348,6 +353,227 @@ class LocalLanMultiplayerTest {
             ).getOrThrow()
             assertEquals(GameResult.WHITE_WIN, finished.result)
             assertEquals(GameTerminationReason.RESIGNATION, finished.reason)
+        } finally {
+            collectorJob.cancel()
+            inbox.close()
+            client.disconnect()
+            server.stop()
+        }
+    }
+
+    @Test
+    fun takebackAndRematchWithoutRestartingLobbyWorkOverLan() = runBlocking {
+        val config = HostRoomConfig(
+            hostName = "Host",
+            timeControl = TimeControl.RAPID_10_0,
+            sideSelection = SideSelection.WHITE,
+            hostAssignedColor = PieceColor.WHITE,
+            connectionType = ConnectionType.WIFI_LAN,
+            requestedPort = 0
+        )
+        val server = LocalGameServer(config = config, timeProvider = FakeTimeProvider())
+        val client = WebSocketClient()
+        val clientUuid = UUID.randomUUID().toString()
+        val inbox = Channel<NetworkEnvelope>(Channel.UNLIMITED)
+        val collectorJob = launch(start = CoroutineStart.UNDISPATCHED) {
+            client.incomingMessages.collect { inbox.send(it) }
+        }
+
+        try {
+            val port = server.start()
+            assertTrue(client.connect("127.0.0.1", port).isSuccess)
+
+            client.send(
+                NetworkMessageSerializer.createEnvelope(
+                    gameUuid = config.gameUuid,
+                    senderUuid = clientUuid,
+                    type = NetworkMessageType.PLAYER_CONNECTED,
+                    sequenceNumber = 1L,
+                    roomSecret = config.roomSecret,
+                    payload = PlayerConnectedPayload(clientUuid, "Guest", ready = true, roomSecret = config.roomSecret)
+                )
+            )
+            awaitType(inbox, NetworkMessageType.ROOM_INFO)
+
+            assertTrue(server.startGame())
+            awaitType(inbox, NetworkMessageType.GAME_START)
+
+            // Play 1. e4 (now Black's turn = opponent's turn for Host/White)
+            assertTrue(server.submitHostMove(BoardSquare.fromAlgebraic("e2")!!, BoardSquare.fromAlgebraic("e4")!!, null))
+            awaitType(inbox, NetworkMessageType.MOVE_ACCEPTED)
+
+            // Opponent's turn: Host takeback undoes 1 ply (e4) back to Host's turn
+            server.submitHostTakebackRequest()
+            val onePlyReq = NetworkMessageSerializer.decodeEnvelopePayload<TakebackRequestPayload>(
+                awaitType(inbox, NetworkMessageType.TAKEBACK_REQUEST)
+            ).getOrThrow()
+            assertEquals(PieceColor.WHITE, onePlyReq.requestedBy)
+            assertEquals(0, onePlyReq.targetPly)
+
+            client.send(
+                NetworkMessageSerializer.createEnvelope(
+                    gameUuid = config.gameUuid,
+                    senderUuid = clientUuid,
+                    type = NetworkMessageType.TAKEBACK_ACCEPTED,
+                    sequenceNumber = 2L,
+                    roomSecret = config.roomSecret,
+                    payload = TakebackDecisionPayload(decidedBy = PieceColor.BLACK, accepted = true)
+                )
+            )
+            assertTrue(
+                NetworkMessageSerializer.decodeEnvelopePayload<TakebackDecisionPayload>(
+                    awaitType(inbox, NetworkMessageType.TAKEBACK_ACCEPTED)
+                ).getOrThrow().accepted
+            )
+            val stateAfterOnePlyUndo = NetworkMessageSerializer.decodeEnvelopePayload<GameStatePayload>(
+                awaitType(inbox, NetworkMessageType.GAME_STATE)
+            ).getOrThrow()
+            assertEquals(emptyList<String>(), stateAfterOnePlyUndo.uciMoves)
+            assertEquals(PieceColor.WHITE, stateAfterOnePlyUndo.sideToMove)
+
+            // Play 1. d4 e5 2. Nf3 Nc6 (now White's turn = Host's own turn)
+            assertTrue(server.submitHostMove(BoardSquare.fromAlgebraic("d2")!!, BoardSquare.fromAlgebraic("d4")!!, null))
+            awaitType(inbox, NetworkMessageType.MOVE_ACCEPTED)
+            client.send(
+                NetworkMessageSerializer.createEnvelope(
+                    gameUuid = config.gameUuid,
+                    senderUuid = clientUuid,
+                    type = NetworkMessageType.MOVE_REQUEST,
+                    sequenceNumber = 3L,
+                    roomSecret = config.roomSecret,
+                    payload = MoveRequestPayload("e7", "e5", expectedPly = 1, expectedMoveNumber = 1)
+                )
+            )
+            awaitType(inbox, NetworkMessageType.MOVE_ACCEPTED)
+            assertTrue(server.submitHostMove(BoardSquare.fromAlgebraic("g1")!!, BoardSquare.fromAlgebraic("f3")!!, null))
+            awaitType(inbox, NetworkMessageType.MOVE_ACCEPTED)
+            client.send(
+                NetworkMessageSerializer.createEnvelope(
+                    gameUuid = config.gameUuid,
+                    senderUuid = clientUuid,
+                    type = NetworkMessageType.MOVE_REQUEST,
+                    sequenceNumber = 4L,
+                    roomSecret = config.roomSecret,
+                    payload = MoveRequestPayload("b8", "c6", expectedPly = 3, expectedMoveNumber = 2)
+                )
+            )
+            awaitType(inbox, NetworkMessageType.MOVE_ACCEPTED)
+
+            // Host's own turn: Host takeback undoes 2 plies (Nf3 + Nc6) back to Host's turn
+            server.submitHostTakebackRequest()
+            val twoPlyReq = NetworkMessageSerializer.decodeEnvelopePayload<TakebackRequestPayload>(
+                awaitType(inbox, NetworkMessageType.TAKEBACK_REQUEST)
+            ).getOrThrow()
+            assertEquals(PieceColor.WHITE, twoPlyReq.requestedBy)
+            assertEquals(2, twoPlyReq.targetPly)
+
+            client.send(
+                NetworkMessageSerializer.createEnvelope(
+                    gameUuid = config.gameUuid,
+                    senderUuid = clientUuid,
+                    type = NetworkMessageType.TAKEBACK_ACCEPTED,
+                    sequenceNumber = 5L,
+                    roomSecret = config.roomSecret,
+                    payload = TakebackDecisionPayload(decidedBy = PieceColor.BLACK, accepted = true)
+                )
+            )
+            val takebackAccepted = NetworkMessageSerializer.decodeEnvelopePayload<TakebackDecisionPayload>(
+                awaitType(inbox, NetworkMessageType.TAKEBACK_ACCEPTED)
+            ).getOrThrow()
+            assertTrue(takebackAccepted.accepted)
+            val stateAfterUndo = NetworkMessageSerializer.decodeEnvelopePayload<GameStatePayload>(
+                awaitType(inbox, NetworkMessageType.GAME_STATE)
+            ).getOrThrow()
+            assertEquals(listOf("d2d4", "e7e5"), stateAfterUndo.uciMoves)
+            assertEquals(PieceColor.WHITE, stateAfterUndo.sideToMove)
+
+            // Client resigns -> game ends, then Client requests Rematch in same room
+            client.send(
+                NetworkMessageSerializer.createEnvelope(
+                    gameUuid = config.gameUuid,
+                    senderUuid = clientUuid,
+                    type = NetworkMessageType.RESIGN,
+                    sequenceNumber = 6L,
+                    roomSecret = config.roomSecret,
+                    payload = ResignPayload(resigningColor = PieceColor.BLACK)
+                )
+            )
+            awaitType(inbox, NetworkMessageType.GAME_FINISHED)
+
+            client.send(
+                NetworkMessageSerializer.createEnvelope(
+                    gameUuid = config.gameUuid,
+                    senderUuid = clientUuid,
+                    type = NetworkMessageType.REMATCH_REQUEST,
+                    sequenceNumber = 7L,
+                    roomSecret = config.roomSecret,
+                    payload = RematchRequestPayload(requestedBy = PieceColor.BLACK)
+                )
+            )
+            val rematchReq = NetworkMessageSerializer.decodeEnvelopePayload<RematchRequestPayload>(
+                awaitType(inbox, NetworkMessageType.REMATCH_REQUEST)
+            ).getOrThrow()
+            assertEquals(PieceColor.BLACK, rematchReq.requestedBy)
+
+            server.submitHostRematchDecision(accepted = true)
+            val rematchDecision = NetworkMessageSerializer.decodeEnvelopePayload<RematchDecisionPayload>(
+                awaitType(inbox, NetworkMessageType.REMATCH_ACCEPTED)
+            ).getOrThrow()
+            assertTrue(rematchDecision.accepted)
+            val newGameStart = NetworkMessageSerializer.decodeEnvelopePayload<GameStartPayload>(
+                awaitType(inbox, NetworkMessageType.GAME_START)
+            ).getOrThrow()
+            assertEquals(clientUuid, newGameStart.whitePlayerUuid)
+            assertEquals(config.hostUuid, newGameStart.blackPlayerUuid)
+            assertTrue(newGameStart.gameUuid != config.gameUuid)
+
+            val freshState = NetworkMessageSerializer.decodeEnvelopePayload<GameStatePayload>(
+                awaitType(inbox, NetworkMessageType.GAME_STATE)
+            ).getOrThrow()
+            assertEquals(0, freshState.plyCount)
+            assertEquals(PieceColor.WHITE, freshState.sideToMove)
+
+            // Client (now White!) can immediately play 1. d4 without leaving room or restarting lobby
+            client.send(
+                NetworkMessageSerializer.createEnvelope(
+                    gameUuid = newGameStart.gameUuid,
+                    senderUuid = clientUuid,
+                    type = NetworkMessageType.MOVE_REQUEST,
+                    sequenceNumber = 8L,
+                    roomSecret = config.roomSecret,
+                    payload = MoveRequestPayload("d2", "d4", expectedPly = 0, expectedMoveNumber = 1)
+                )
+            )
+            val rematchMove = NetworkMessageSerializer.decodeEnvelopePayload<MoveAcceptedPayload>(
+                awaitType(inbox, NetworkMessageType.MOVE_ACCEPTED)
+            ).getOrThrow()
+            assertEquals("d2d4", rematchMove.uci)
+
+            // Explicit client DISCONNECT mid-game awards win to Host (who plays Black after rematch)
+            val serverInbox = Channel<NetworkEnvelope>(Channel.UNLIMITED)
+            val serverEventsJob = launch(start = CoroutineStart.UNDISPATCHED) {
+                server.events.collect { serverInbox.send(it) }
+            }
+            try {
+                client.send(
+                    NetworkMessageSerializer.createEnvelope(
+                        gameUuid = newGameStart.gameUuid,
+                        senderUuid = clientUuid,
+                        type = NetworkMessageType.DISCONNECT,
+                        sequenceNumber = 9L,
+                        roomSecret = config.roomSecret,
+                        payload = DisconnectPayload(clientUuid, "Выход из партии")
+                    )
+                )
+                val disconnectWin = NetworkMessageSerializer.decodeEnvelopePayload<GameFinishedPayload>(
+                    awaitType(serverInbox, NetworkMessageType.GAME_FINISHED)
+                ).getOrThrow()
+                assertEquals(GameResult.BLACK_WIN, disconnectWin.result)
+                assertEquals(GameTerminationReason.RESIGNATION, disconnectWin.reason)
+            } finally {
+                serverEventsJob.cancel()
+                serverInbox.close()
+            }
         } finally {
             collectorJob.cancel()
             inbox.close()

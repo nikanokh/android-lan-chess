@@ -58,15 +58,11 @@ fun GameScreen(
     }
 
     val handleExit: () -> Unit = {
-        if (uiState.isLanMatch) {
-            viewModel.leaveLanMatch()
-        }
-        onNavigateBack()
+        viewModel.requestExit(onNavigateBack)
     }
 
-    if (uiState.isLanMatch) {
-        BackHandler(onBack = handleExit)
-    }
+    val needsExitConfirm = !uiState.isGameOver && (uiState.isLanMatch || uiState.moveHistory.isNotEmpty())
+    BackHandler(enabled = needsExitConfirm, onBack = handleExit)
 
     GameScreenContent(
         uiState = uiState,
@@ -91,15 +87,15 @@ fun GameScreen(
         onRequestResign = viewModel::requestResign,
         onConfirmResign = viewModel::confirmResignNow,
         onDismissResign = viewModel::dismissResignConfirm,
-        onUndo = viewModel::undoMove,
-        onNewGame = {
-            if (uiState.isLanMatch) {
-                handleExit()
-            } else {
-                viewModel.resetGame()
-            }
-        },
+        onUndo = viewModel::requestTakeback,
+        onNewGame = viewModel::resetGame,
         onDismissGameOver = viewModel::dismissGameOverDialog,
+        onAcceptTakeback = viewModel::acceptTakeback,
+        onDeclineTakeback = viewModel::declineTakeback,
+        onAcceptRematch = viewModel::acceptRematch,
+        onDeclineRematch = viewModel::declineRematch,
+        onConfirmExit = { viewModel.confirmExitForfeit(onNavigateBack) },
+        onDismissExit = viewModel::dismissExitConfirm,
         onOpenPgn = { whiteName, blackName -> viewModel.openPgnPreview(whiteName, blackName) },
         onDismissPgn = viewModel::dismissPgnPreview
     )
@@ -134,7 +130,13 @@ fun GameScreenContent(
     overridePlayerName: String = "",
     onCancelPremove: () -> Unit = {},
     onInvalidDrop: (BoardSquare, BoardSquare?) -> Unit = { _, _ -> },
-    onBoardFlipped: () -> Unit = {}
+    onBoardFlipped: () -> Unit = {},
+    onAcceptTakeback: () -> Unit = {},
+    onDeclineTakeback: () -> Unit = {},
+    onAcceptRematch: () -> Unit = {},
+    onDeclineRematch: () -> Unit = {},
+    onConfirmExit: () -> Unit = onNavigateBack,
+    onDismissExit: () -> Unit = {}
 ) {
     var flipped by rememberSaveable(uiState.playerSide) {
         mutableStateOf(uiState.playerSide == PieceColor.BLACK)
@@ -180,13 +182,24 @@ fun GameScreenContent(
         )
     }
 
+    if (uiState.showExitConfirmDialog) {
+        ExitConfirmDialog(
+            onConfirm = onConfirmExit,
+            onDismiss = onDismissExit
+        )
+    }
+
     if (uiState.showGameOverDialog && uiState.outcome != null) {
         GameOverDialog(
             outcome = uiState.outcome,
             plyCount = uiState.moveHistory.size,
             onNewGame = onNewGame,
-            onViewBoard = onDismissGameOver,
-            isLanMatch = uiState.isLanMatch
+            isLanMatch = uiState.isLanMatch,
+            playerSide = uiState.playerSide,
+            rematchOfferState = uiState.rematchOfferState,
+            onAcceptRematch = onAcceptRematch,
+            onDeclineRematch = onDeclineRematch,
+            onExitMatch = onNavigateBack
         )
     }
 
@@ -224,13 +237,17 @@ fun GameScreenContent(
     }
 
     if (showGameMenuSheet) {
+        val takebackPending = uiState.takebackOfferState == DrawOfferState.SENT ||
+            uiState.takebackOfferState == DrawOfferState.RECEIVED
+        val requiredPliesForTakeback = if (uiState.isLanMatch && uiState.sideToMove == uiState.playerSide) 2 else 1
         GameMenuSheet(
-            canUndo = uiState.moveHistory.isNotEmpty() && !uiState.isGameOver && !uiState.isLanMatch,
+            canUndo = uiState.moveHistory.size >= requiredPliesForTakeback && !uiState.isGameOver && !takebackPending,
             onUndo = onUndo,
             onShowPgn = { onOpenPgn(whiteName, blackName) },
             onNewGame = onNewGame,
             onDismiss = { showGameMenuSheet = false },
-            isLanMatch = uiState.isLanMatch
+            isLanMatch = uiState.isLanMatch,
+            onLeaveRoom = onNavigateBack
         )
     }
 
@@ -322,6 +339,20 @@ fun GameScreenContent(
                             onDeclineDraw = onDeclineDraw,
                             isLanMatch = uiState.isLanMatch
                         )
+
+                        TakebackRequestBanner(
+                            takebackOfferState = uiState.takebackOfferState,
+                            onAcceptTakeback = onAcceptTakeback,
+                            onDeclineTakeback = onDeclineTakeback
+                        )
+
+                        if (!uiState.showGameOverDialog) {
+                            RematchRequestBanner(
+                                rematchOfferState = uiState.rematchOfferState,
+                                onAcceptRematch = onAcceptRematch,
+                                onDeclineRematch = onDeclineRematch
+                            )
+                        }
 
                         Spacer(modifier = Modifier.weight(1f))
 
@@ -438,17 +469,33 @@ fun GameScreenContent(
                         )
                     }
 
-                    // Draw offer banner floats cleanly above bottom bars so the board NEVER jumps
-                    DrawOfferBanner(
-                        drawOfferState = uiState.drawOfferState,
-                        offeredBy = uiState.drawOfferedBy,
-                        onAcceptDraw = onAcceptDraw,
-                        onDeclineDraw = onDeclineDraw,
-                        isLanMatch = uiState.isLanMatch,
+                    // Request banners float cleanly above bottom bars so the board NEVER jumps
+                    Column(
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
-                            .padding(start = 10.dp, end = 10.dp, bottom = 114.dp)
-                    )
+                            .padding(start = 10.dp, end = 10.dp, bottom = 114.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        DrawOfferBanner(
+                            drawOfferState = uiState.drawOfferState,
+                            offeredBy = uiState.drawOfferedBy,
+                            onAcceptDraw = onAcceptDraw,
+                            onDeclineDraw = onDeclineDraw,
+                            isLanMatch = uiState.isLanMatch
+                        )
+                        TakebackRequestBanner(
+                            takebackOfferState = uiState.takebackOfferState,
+                            onAcceptTakeback = onAcceptTakeback,
+                            onDeclineTakeback = onDeclineTakeback
+                        )
+                        if (!uiState.showGameOverDialog) {
+                            RematchRequestBanner(
+                                rematchOfferState = uiState.rematchOfferState,
+                                onAcceptRematch = onAcceptRematch,
+                                onDeclineRematch = onDeclineRematch
+                            )
+                        }
+                    }
                 }
             }
         }

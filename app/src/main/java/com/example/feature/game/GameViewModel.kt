@@ -11,6 +11,8 @@ import com.example.core.chess.ChessPositionSnapshot
 import com.example.core.chess.ClockSnapshot
 import com.example.core.chess.EngineMove
 import com.example.core.chess.EngineMoveResult
+import com.example.core.chess.GameOutcome
+import com.example.core.chess.GameTerminationReason
 import com.example.core.chess.MonotonicTimeProvider
 import com.example.core.chess.PgnMetadata
 import com.example.core.chess.PremoveCalculator
@@ -26,6 +28,7 @@ import com.example.core.ui.board.PieceType
 import com.example.domain.model.AppSettings
 import com.example.domain.model.CompletedGameRecord
 import com.example.domain.model.CompletedMoveRecord
+import com.example.domain.model.GameResult
 import com.example.domain.model.PieceColor
 import com.example.domain.model.TimeControl
 import com.example.domain.repository.GameRepository
@@ -201,9 +204,62 @@ class GameViewModel private constructor(
         stopClockTicker()
         lanObserverJob?.cancel()
         lanObserverJob = null
-        viewModelScope.launch {
-            manager.disconnect()
+        manager.launchForfeitAndDisconnect()
+    }
+
+    fun requestExit(onProceedExit: () -> Unit) {
+        val current = _uiState.value
+        val needsForfeitConfirm = !current.isGameOver && (isLanMode || current.moveHistory.isNotEmpty())
+        if (needsForfeitConfirm) {
+            _uiState.update { it.copy(showExitConfirmDialog = true) }
+        } else {
+            if (isLanMode) {
+                leaveLanMatch()
+            }
+            onProceedExit()
         }
+    }
+
+    fun dismissExitConfirm() {
+        _uiState.update { it.copy(showExitConfirmDialog = false) }
+    }
+
+    fun confirmExitForfeit(onProceedExit: () -> Unit) {
+        val current = _uiState.value
+        _uiState.update { it.copy(showExitConfirmDialog = false) }
+
+        if (isLanMode) {
+            val manager = gameSessionManager
+            val session = manager?.sessionState?.value
+            if (manager != null && session != null && !current.isGameOver) {
+                val loserColor = session.localColor
+                val outcome = GameOutcome(
+                    result = if (loserColor == PieceColor.WHITE) GameResult.BLACK_WIN else GameResult.WHITE_WIN,
+                    reason = GameTerminationReason.RESIGNATION
+                )
+                val baseSnap = session.positionSnapshot ?: manager.livePositionSnapshot()
+                persistLanGameIfFinished(manager, session, baseSnap.copy(outcome = outcome))
+            }
+            leaveLanMatch()
+            onProceedExit()
+            return
+        }
+
+        if (!current.isGameOver && current.moveHistory.isNotEmpty()) {
+            chessEngine.resign(current.sideToMove)
+            val stoppedClock = chessClock.stop()
+            stopClockTicker()
+            val live = chessEngine.snapshot()
+            _uiState.value = buildLiveUiState(
+                snapshot = live,
+                clockSnapshot = stoppedClock,
+                timeControl = current.timeControl,
+                playerSide = current.playerSide,
+                showGameOverDialog = false
+            )
+            persistLocalGameIfFinished(live, current.timeControl, current.playerSide)
+        }
+        onProceedExit()
     }
 
     fun onSquareTap(square: BoardSquare) {
@@ -775,8 +831,79 @@ class GameViewModel private constructor(
 
     // ---- Utility actions ----
 
+    fun requestTakeback() {
+        val current = _uiState.value
+        if (current.isGameOver) return
+        if (!isLanMode) {
+            if (current.moveHistory.isEmpty()) return
+            undoMove()
+            return
+        }
+        val requiredPlies = if (current.sideToMove == current.playerSide) 2 else 1
+        if (current.moveHistory.size < requiredPlies) return
+        if (current.takebackOfferState == DrawOfferState.SENT ||
+            current.takebackOfferState == DrawOfferState.RECEIVED
+        ) return
+        if (!acquireActionGuard()) return
+        val manager = gameSessionManager ?: return
+        viewModelScope.launch { manager.requestTakeback() }
+    }
+
+    fun acceptTakeback() {
+        val current = _uiState.value
+        if (!isLanMode || current.isGameOver) return
+        if (current.takebackOfferState != DrawOfferState.RECEIVED) return
+        if (!acquireActionGuard()) return
+        val manager = gameSessionManager ?: return
+        viewModelScope.launch { manager.respondToTakeback(accepted = true) }
+    }
+
+    fun declineTakeback() {
+        val current = _uiState.value
+        if (!isLanMode || current.isGameOver) return
+        if (current.takebackOfferState != DrawOfferState.RECEIVED) return
+        if (!acquireActionGuard()) return
+        val manager = gameSessionManager ?: return
+        viewModelScope.launch { manager.respondToTakeback(accepted = false) }
+    }
+
+    fun requestRematch() {
+        val current = _uiState.value
+        if (!isLanMode) {
+            startNewGameInternal(current.timeControl, current.playerSide)
+            return
+        }
+        if (current.rematchOfferState == DrawOfferState.SENT ||
+            current.rematchOfferState == DrawOfferState.RECEIVED
+        ) return
+        if (!acquireActionGuard()) return
+        val manager = gameSessionManager ?: return
+        viewModelScope.launch { manager.requestRematch() }
+    }
+
+    fun acceptRematch() {
+        val current = _uiState.value
+        if (!isLanMode) return
+        if (current.rematchOfferState != DrawOfferState.RECEIVED) return
+        if (!acquireActionGuard()) return
+        val manager = gameSessionManager ?: return
+        viewModelScope.launch { manager.respondToRematch(accepted = true) }
+    }
+
+    fun declineRematch() {
+        val current = _uiState.value
+        if (!isLanMode) return
+        if (current.rematchOfferState != DrawOfferState.RECEIVED) return
+        if (!acquireActionGuard()) return
+        val manager = gameSessionManager ?: return
+        viewModelScope.launch { manager.respondToRematch(accepted = false) }
+    }
+
     fun undoMove() {
-        if (isLanMode) return
+        if (isLanMode) {
+            requestTakeback()
+            return
+        }
         val current = _uiState.value
         if (current.moveHistory.isEmpty() || current.isGameOver) return
         if (chessEngine.undoLastMove() != null) {
@@ -810,7 +937,10 @@ class GameViewModel private constructor(
     }
 
     fun resetGame() {
-        if (isLanMode) return
+        if (isLanMode) {
+            requestRematch()
+            return
+        }
         val current = _uiState.value
         startNewGameInternal(current.timeControl, current.playerSide)
     }
@@ -948,8 +1078,11 @@ class GameViewModel private constructor(
         }
 
         val wasGameOver = previous.isGameOver
+        val justRematched = wasGameOver && !snapshot.isGameOver
         val showGameOverNow = if (snapshot.isGameOver && !wasGameOver) {
             true
+        } else if (justRematched) {
+            false
         } else {
             previous.showGameOverDialog && snapshot.isGameOver
         }
@@ -974,6 +1107,10 @@ class GameViewModel private constructor(
                     clock = clockSnap,
                     drawOfferState = session.drawOfferState,
                     drawOfferedBy = session.drawOfferedBy,
+                    takebackOfferState = session.takebackOfferState,
+                    takebackRequestedBy = session.takebackRequestedBy,
+                    rematchOfferState = session.rematchOfferState,
+                    rematchRequestedBy = session.rematchRequestedBy,
                     connectionStatus = session.connectionStatus,
                     showGameOverDialog = showGameOverNow
                 )
@@ -1036,10 +1173,15 @@ class GameViewModel private constructor(
             clock = clockSnap,
             drawOfferState = session.drawOfferState,
             drawOfferedBy = session.drawOfferedBy,
+            takebackOfferState = session.takebackOfferState,
+            takebackRequestedBy = session.takebackRequestedBy,
+            rematchOfferState = session.rematchOfferState,
+            rematchRequestedBy = session.rematchRequestedBy,
             connectionStatus = session.connectionStatus,
             materialBalance = GameHistoryFormatter.computeMaterialBalance(snapshot.pieces),
             pendingPromotion = previous.pendingPromotion?.takeIf { !isNewMove && !snapshot.isGameOver },
             showResignConfirmDialog = previous.showResignConfirmDialog && !snapshot.isGameOver,
+            showExitConfirmDialog = previous.showExitConfirmDialog && !snapshot.isGameOver,
             showGameOverDialog = showGameOverNow,
             pgnPreview = previous.pgnPreview
         )
@@ -1048,7 +1190,9 @@ class GameViewModel private constructor(
             (session.drawOfferState == DrawOfferState.RECEIVED || session.drawOfferState == DrawOfferState.SENT) &&
             session.drawOfferState != previous.drawOfferState
 
-        if (justEnded) {
+        if (justRematched) {
+            playSound(ChessSoundEffect.GAME_START)
+        } else if (justEnded) {
             snapshot.outcome?.let { outcome ->
                 playSound(ChessSoundSelector.selectGameOverSound(outcome.result, session.localColor))
             }

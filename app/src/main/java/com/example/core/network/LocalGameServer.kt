@@ -90,6 +90,9 @@ class LocalGameServer(
     private var clockSyncJob: Job? = null
 
     private var chessClock = ChessClock(config.timeControl, timeProvider)
+    private var currentGameUuid: String = config.gameUuid
+    private var currentHostColor: PieceColor = config.hostAssignedColor
+    private val currentClientColor: PieceColor get() = currentHostColor.opposite()
     private var hostReady: Boolean = true
     private var clientUuid: String? = null
     private var clientName: String? = null
@@ -97,6 +100,8 @@ class LocalGameServer(
     private var clientConnected: Boolean = false
     private var gameStarted: Boolean = false
     private var drawOfferedBy: PieceColor? = null
+    private var takebackRequestedBy: PieceColor? = null
+    private var rematchRequestedBy: PieceColor? = null
 
     private val _boundPort = MutableStateFlow(0)
     val boundPort: StateFlow<Int> = _boundPort.asStateFlow()
@@ -217,19 +222,21 @@ class LocalGameServer(
             chessEngine.reset()
             chessClock = ChessClock(config.timeControl, timeProvider)
             drawOfferedBy = null
+            takebackRequestedBy = null
+            rematchRequestedBy = null
             gameStarted = true
 
             val info = buildRoomInfoLocked()
             _roomInfo.value = info
 
-            val whiteUuid = if (config.hostAssignedColor == PieceColor.WHITE) config.hostUuid else clientUuid!!
-            val whiteName = if (config.hostAssignedColor == PieceColor.WHITE) config.hostName else (clientName ?: "Игрок")
-            val blackUuid = if (config.hostAssignedColor == PieceColor.BLACK) config.hostUuid else clientUuid!!
-            val blackName = if (config.hostAssignedColor == PieceColor.BLACK) config.hostName else (clientName ?: "Игрок")
+            val whiteUuid = if (currentHostColor == PieceColor.WHITE) config.hostUuid else clientUuid!!
+            val whiteName = if (currentHostColor == PieceColor.WHITE) config.hostName else (clientName ?: "Игрок")
+            val blackUuid = if (currentHostColor == PieceColor.BLACK) config.hostUuid else clientUuid!!
+            val blackName = if (currentHostColor == PieceColor.BLACK) config.hostName else (clientName ?: "Игрок")
             val clockSnap = chessClock.snapshot()
 
             val startPayload = GameStartPayload(
-                gameUuid = config.gameUuid,
+                gameUuid = currentGameUuid,
                 whitePlayerUuid = whiteUuid,
                 whitePlayerName = whiteName,
                 blackPlayerUuid = blackUuid,
@@ -260,8 +267,9 @@ class LocalGameServer(
     ): Boolean {
         val currentPly = stateMutex.withLock { chessEngine.moveHistory().size }
         val moveNumber = stateMutex.withLock { chessEngine.snapshot().fullMoveNumber }
+        val activeGameUuid = stateMutex.withLock { currentGameUuid }
         val request = NetworkMessageSerializer.createEnvelope(
-            gameUuid = config.gameUuid,
+            gameUuid = activeGameUuid,
             senderUuid = config.hostUuid,
             type = NetworkMessageType.MOVE_REQUEST,
             sequenceNumber = sequenceCounter.incrementAndGet(),
@@ -278,37 +286,97 @@ class LocalGameServer(
     }
 
     suspend fun submitHostDrawOffer() {
+        val (activeGameUuid, hostColor) = stateMutex.withLock { currentGameUuid to currentHostColor }
         val envelope = NetworkMessageSerializer.createEnvelope(
-            gameUuid = config.gameUuid,
+            gameUuid = activeGameUuid,
             senderUuid = config.hostUuid,
             type = NetworkMessageType.DRAW_OFFER,
             sequenceNumber = sequenceCounter.incrementAndGet(),
             roomSecret = config.roomSecret,
-            payload = DrawOfferPayload(offeredBy = config.hostAssignedColor)
+            payload = DrawOfferPayload(offeredBy = hostColor)
         )
         processDrawOffer(envelope)
     }
 
     suspend fun submitHostDrawDecision(accepted: Boolean) {
+        val (activeGameUuid, hostColor) = stateMutex.withLock { currentGameUuid to currentHostColor }
         val envelope = NetworkMessageSerializer.createEnvelope(
-            gameUuid = config.gameUuid,
+            gameUuid = activeGameUuid,
             senderUuid = config.hostUuid,
             type = if (accepted) NetworkMessageType.DRAW_ACCEPTED else NetworkMessageType.DRAW_REJECTED,
             sequenceNumber = sequenceCounter.incrementAndGet(),
             roomSecret = config.roomSecret,
-            payload = DrawDecisionPayload(decidedBy = config.hostAssignedColor, accepted = accepted)
+            payload = DrawDecisionPayload(decidedBy = hostColor, accepted = accepted)
         )
         processDrawDecision(envelope, accepted)
     }
 
-    suspend fun submitHostResign() {
+    suspend fun submitHostTakebackRequest() {
+        val (activeGameUuid, hostColor, currentPly) = stateMutex.withLock {
+            Triple(currentGameUuid, currentHostColor, chessEngine.moveHistory().size)
+        }
         val envelope = NetworkMessageSerializer.createEnvelope(
-            gameUuid = config.gameUuid,
+            gameUuid = activeGameUuid,
+            senderUuid = config.hostUuid,
+            type = NetworkMessageType.TAKEBACK_REQUEST,
+            sequenceNumber = sequenceCounter.incrementAndGet(),
+            roomSecret = config.roomSecret,
+            payload = TakebackRequestPayload(
+                requestedBy = hostColor,
+                targetPly = (currentPly - 1).coerceAtLeast(0)
+            )
+        )
+        processTakebackRequest(envelope)
+    }
+
+    suspend fun submitHostTakebackDecision(accepted: Boolean) {
+        val (activeGameUuid, hostColor) = stateMutex.withLock { currentGameUuid to currentHostColor }
+        val envelope = NetworkMessageSerializer.createEnvelope(
+            gameUuid = activeGameUuid,
+            senderUuid = config.hostUuid,
+            type = if (accepted) NetworkMessageType.TAKEBACK_ACCEPTED else NetworkMessageType.TAKEBACK_REJECTED,
+            sequenceNumber = sequenceCounter.incrementAndGet(),
+            roomSecret = config.roomSecret,
+            payload = TakebackDecisionPayload(decidedBy = hostColor, accepted = accepted)
+        )
+        processTakebackDecision(envelope, accepted)
+    }
+
+    suspend fun submitHostRematchRequest() {
+        val (activeGameUuid, hostColor) = stateMutex.withLock { currentGameUuid to currentHostColor }
+        val envelope = NetworkMessageSerializer.createEnvelope(
+            gameUuid = activeGameUuid,
+            senderUuid = config.hostUuid,
+            type = NetworkMessageType.REMATCH_REQUEST,
+            sequenceNumber = sequenceCounter.incrementAndGet(),
+            roomSecret = config.roomSecret,
+            payload = RematchRequestPayload(requestedBy = hostColor)
+        )
+        processRematchRequest(envelope)
+    }
+
+    suspend fun submitHostRematchDecision(accepted: Boolean) {
+        val (activeGameUuid, hostColor) = stateMutex.withLock { currentGameUuid to currentHostColor }
+        val envelope = NetworkMessageSerializer.createEnvelope(
+            gameUuid = activeGameUuid,
+            senderUuid = config.hostUuid,
+            type = if (accepted) NetworkMessageType.REMATCH_ACCEPTED else NetworkMessageType.REMATCH_REJECTED,
+            sequenceNumber = sequenceCounter.incrementAndGet(),
+            roomSecret = config.roomSecret,
+            payload = RematchDecisionPayload(decidedBy = hostColor, accepted = accepted)
+        )
+        processRematchDecision(envelope, accepted)
+    }
+
+    suspend fun submitHostResign() {
+        val (activeGameUuid, hostColor) = stateMutex.withLock { currentGameUuid to currentHostColor }
+        val envelope = NetworkMessageSerializer.createEnvelope(
+            gameUuid = activeGameUuid,
             senderUuid = config.hostUuid,
             type = NetworkMessageType.RESIGN,
             sequenceNumber = sequenceCounter.incrementAndGet(),
             roomSecret = config.roomSecret,
-            payload = ResignPayload(resigningColor = config.hostAssignedColor)
+            payload = ResignPayload(resigningColor = hostColor)
         )
         processResign(envelope)
     }
@@ -347,27 +415,57 @@ class LocalGameServer(
                         }
                     }
                     NetworkMessageType.MOVE_REQUEST -> {
-                        if (authenticatedUuid != null && envelope.senderUuid == authenticatedUuid && envelope.gameUuid == config.gameUuid) {
+                        if (authenticatedUuid != null && envelope.senderUuid == authenticatedUuid && envelope.gameUuid == currentGameUuid) {
                             processMoveRequest(envelope, replySession = session)
                         }
                     }
                     NetworkMessageType.DRAW_OFFER -> {
-                        if (authenticatedUuid != null && envelope.senderUuid == authenticatedUuid && envelope.gameUuid == config.gameUuid) {
+                        if (authenticatedUuid != null && envelope.senderUuid == authenticatedUuid && envelope.gameUuid == currentGameUuid) {
                             processDrawOffer(envelope)
                         }
                     }
                     NetworkMessageType.DRAW_ACCEPTED -> {
-                        if (authenticatedUuid != null && envelope.senderUuid == authenticatedUuid && envelope.gameUuid == config.gameUuid) {
+                        if (authenticatedUuid != null && envelope.senderUuid == authenticatedUuid && envelope.gameUuid == currentGameUuid) {
                             processDrawDecision(envelope, accepted = true)
                         }
                     }
                     NetworkMessageType.DRAW_REJECTED -> {
-                        if (authenticatedUuid != null && envelope.senderUuid == authenticatedUuid && envelope.gameUuid == config.gameUuid) {
+                        if (authenticatedUuid != null && envelope.senderUuid == authenticatedUuid && envelope.gameUuid == currentGameUuid) {
                             processDrawDecision(envelope, accepted = false)
                         }
                     }
+                    NetworkMessageType.TAKEBACK_REQUEST -> {
+                        if (authenticatedUuid != null && envelope.senderUuid == authenticatedUuid && envelope.gameUuid == currentGameUuid) {
+                            processTakebackRequest(envelope)
+                        }
+                    }
+                    NetworkMessageType.TAKEBACK_ACCEPTED -> {
+                        if (authenticatedUuid != null && envelope.senderUuid == authenticatedUuid && envelope.gameUuid == currentGameUuid) {
+                            processTakebackDecision(envelope, accepted = true)
+                        }
+                    }
+                    NetworkMessageType.TAKEBACK_REJECTED -> {
+                        if (authenticatedUuid != null && envelope.senderUuid == authenticatedUuid && envelope.gameUuid == currentGameUuid) {
+                            processTakebackDecision(envelope, accepted = false)
+                        }
+                    }
+                    NetworkMessageType.REMATCH_REQUEST -> {
+                        if (authenticatedUuid != null && envelope.senderUuid == authenticatedUuid && envelope.gameUuid == currentGameUuid) {
+                            processRematchRequest(envelope)
+                        }
+                    }
+                    NetworkMessageType.REMATCH_ACCEPTED -> {
+                        if (authenticatedUuid != null && envelope.senderUuid == authenticatedUuid && envelope.gameUuid == currentGameUuid) {
+                            processRematchDecision(envelope, accepted = true)
+                        }
+                    }
+                    NetworkMessageType.REMATCH_REJECTED -> {
+                        if (authenticatedUuid != null && envelope.senderUuid == authenticatedUuid && envelope.gameUuid == currentGameUuid) {
+                            processRematchDecision(envelope, accepted = false)
+                        }
+                    }
                     NetworkMessageType.RESIGN -> {
-                        if (authenticatedUuid != null && envelope.senderUuid == authenticatedUuid && envelope.gameUuid == config.gameUuid) {
+                        if (authenticatedUuid != null && envelope.senderUuid == authenticatedUuid && envelope.gameUuid == currentGameUuid) {
                             processResign(envelope)
                         }
                     }
@@ -384,6 +482,9 @@ class LocalGameServer(
                         sendToSession(session, pong)
                     }
                     NetworkMessageType.DISCONNECT -> {
+                        if (authenticatedUuid != null) {
+                            processClientExplicitDisconnect(authenticatedUuid)
+                        }
                         break
                     }
                     else -> Unit
@@ -545,6 +646,7 @@ class LocalGameServer(
             when (val result = chessEngine.attemptMove(fromSq, toSq, promo)) {
                 is EngineMoveResult.Success -> {
                     drawOfferedBy = null
+                    takebackRequestedBy = null
                     val move: EngineMove = result.move
                     val updatedClock = if (result.snapshot.isGameOver) {
                         clockSyncJob?.cancel()
@@ -675,6 +777,206 @@ class LocalGameServer(
         toBroadcast.forEach { broadcastToAll(it) }
     }
 
+    private suspend fun processClientExplicitDisconnect(senderUuid: String) {
+        val toBroadcast = stateMutex.withLock {
+            if (!gameStarted || chessEngine.snapshot().isGameOver) return@withLock emptyList()
+            val senderColor = resolveSenderColorLocked(senderUuid) ?: return@withLock emptyList()
+            val outcome = chessEngine.resign(senderColor)
+            clockSyncJob?.cancel()
+            val stopped = chessClock.stop()
+            listOf(
+                createServerEnvelope(NetworkMessageType.RESIGN, ResignPayload(resigningColor = senderColor)),
+                createServerEnvelope(NetworkMessageType.GAME_STATE, buildGameStatePayloadLocked(stopped)),
+                buildGameFinishedEnvelopeLocked(outcome, stopped)
+            )
+        }
+        toBroadcast.forEach { broadcastToAll(it) }
+    }
+
+    private suspend fun processTakebackRequest(envelope: NetworkEnvelope) {
+        val toBroadcast = stateMutex.withLock {
+            val snap = chessEngine.snapshot()
+            if (!gameStarted || snap.isGameOver) return
+            val senderColor = resolveSenderColorLocked(envelope.senderUuid) ?: return
+            if (takebackRequestedBy != null) return
+            val pliesToUndo = if (snap.sideToMove == senderColor) 2 else 1
+            if (snap.moveHistory.size < pliesToUndo) return
+            takebackRequestedBy = senderColor
+            val targetPly = (snap.moveHistory.size - pliesToUndo).coerceAtLeast(0)
+            listOf(
+                createServerEnvelope(
+                    NetworkMessageType.TAKEBACK_REQUEST,
+                    TakebackRequestPayload(
+                        requestedBy = senderColor,
+                        targetPly = targetPly
+                    )
+                ),
+                createServerEnvelope(NetworkMessageType.GAME_STATE, buildGameStatePayloadLocked(chessClock.snapshot()))
+            )
+        }
+        toBroadcast.forEach { broadcastToAll(it) }
+    }
+
+    private suspend fun processTakebackDecision(envelope: NetworkEnvelope, accepted: Boolean) {
+        var restartWatchdog = false
+        val toBroadcast = stateMutex.withLock {
+            val preUndo = chessEngine.snapshot()
+            if (!gameStarted || preUndo.isGameOver) return
+            val senderColor = resolveSenderColorLocked(envelope.senderUuid) ?: return
+            val currentRequester = takebackRequestedBy ?: return
+            if (currentRequester == senderColor) return
+
+            takebackRequestedBy = null
+            val pliesToUndo = if (preUndo.sideToMove == currentRequester) 2 else 1
+            if (!accepted || preUndo.moveHistory.size < pliesToUndo) {
+                listOf(
+                    createServerEnvelope(
+                        NetworkMessageType.TAKEBACK_REJECTED,
+                        TakebackDecisionPayload(decidedBy = senderColor, accepted = false)
+                    ),
+                    createServerEnvelope(NetworkMessageType.GAME_STATE, buildGameStatePayloadLocked(chessClock.snapshot()))
+                )
+            } else {
+                var undoneCount = 0
+                repeat(pliesToUndo) {
+                    if (chessEngine.undoLastMove() != null) {
+                        undoneCount++
+                    }
+                }
+                if (undoneCount == 0) {
+                    listOf(
+                        createServerEnvelope(
+                            NetworkMessageType.TAKEBACK_REJECTED,
+                            TakebackDecisionPayload(decidedBy = senderColor, accepted = false)
+                        ),
+                        createServerEnvelope(NetworkMessageType.GAME_STATE, buildGameStatePayloadLocked(chessClock.snapshot()))
+                    )
+                } else {
+                    drawOfferedBy = null
+                    val postUndo = chessEngine.snapshot()
+                    val updatedClock = if (postUndo.moveHistory.isEmpty()) {
+                        clockSyncJob?.cancel()
+                        chessClock.reset(config.timeControl)
+                    } else {
+                        val switched = chessClock.switchActiveSide(postUndo.sideToMove)
+                        if (switched.flaggedColor != null) {
+                            chessEngine.timeout(switched.flaggedColor)
+                            clockSyncJob?.cancel()
+                        } else {
+                            restartWatchdog = true
+                        }
+                        switched
+                    }
+                    val finalSnap = chessEngine.snapshot()
+                    val envelopes = mutableListOf(
+                        createServerEnvelope(
+                            NetworkMessageType.TAKEBACK_ACCEPTED,
+                            TakebackDecisionPayload(decidedBy = senderColor, accepted = true)
+                        ),
+                        createServerEnvelope(NetworkMessageType.GAME_STATE, buildGameStatePayloadLocked(updatedClock))
+                    )
+                    finalSnap.outcome?.let { outcome ->
+                        envelopes += buildGameFinishedEnvelopeLocked(outcome, updatedClock)
+                    }
+                    envelopes
+                }
+            }
+        }
+        toBroadcast.forEach { broadcastToAll(it) }
+        if (restartWatchdog) {
+            startClockWatchdog()
+        }
+    }
+
+    private suspend fun processRematchRequest(envelope: NetworkEnvelope) {
+        val toBroadcast = stateMutex.withLock {
+            if (!gameStarted || !clientConnected || clientUuid == null) return
+            val senderColor = resolveSenderColorLocked(envelope.senderUuid) ?: return
+            if (rematchRequestedBy != null) return
+            rematchRequestedBy = senderColor
+            listOf(
+                createServerEnvelope(NetworkMessageType.REMATCH_REQUEST, RematchRequestPayload(requestedBy = senderColor)),
+                createServerEnvelope(NetworkMessageType.GAME_STATE, buildGameStatePayloadLocked(chessClock.snapshot()))
+            )
+        }
+        toBroadcast.forEach { broadcastToAll(it) }
+    }
+
+    private suspend fun processRematchDecision(envelope: NetworkEnvelope, accepted: Boolean) {
+        var shouldStartWatchdog = false
+        val toBroadcast = stateMutex.withLock {
+            if (!gameStarted || !clientConnected || clientUuid == null) return
+            val senderColor = resolveSenderColorLocked(envelope.senderUuid) ?: return
+            val currentRequester = rematchRequestedBy ?: return
+            if (currentRequester == senderColor) return
+
+            rematchRequestedBy = null
+            if (!accepted) {
+                listOf(
+                    createServerEnvelope(
+                        NetworkMessageType.REMATCH_REJECTED,
+                        RematchDecisionPayload(decidedBy = senderColor, accepted = false)
+                    ),
+                    createServerEnvelope(NetworkMessageType.GAME_STATE, buildGameStatePayloadLocked(chessClock.snapshot()))
+                )
+            } else {
+                val newGameUuid = UUID.randomUUID().toString()
+                val decisionEnvelope = createServerEnvelope(
+                    NetworkMessageType.REMATCH_ACCEPTED,
+                    RematchDecisionPayload(
+                        decidedBy = senderColor,
+                        accepted = true,
+                        newGameUuid = newGameUuid,
+                        swapColors = true
+                    )
+                )
+                clockSyncJob?.cancel()
+                currentHostColor = currentHostColor.opposite()
+                currentGameUuid = newGameUuid
+                chessEngine.reset()
+                chessClock = ChessClock(config.timeControl, timeProvider)
+                drawOfferedBy = null
+                takebackRequestedBy = null
+                rematchRequestedBy = null
+                gameStarted = true
+
+                val info = buildRoomInfoLocked()
+                _roomInfo.value = info
+
+                val whiteUuid = if (currentHostColor == PieceColor.WHITE) config.hostUuid else clientUuid!!
+                val whiteName = if (currentHostColor == PieceColor.WHITE) config.hostName else (clientName ?: "Игрок")
+                val blackUuid = if (currentHostColor == PieceColor.BLACK) config.hostUuid else clientUuid!!
+                val blackName = if (currentHostColor == PieceColor.BLACK) config.hostName else (clientName ?: "Игрок")
+                val clockSnap = chessClock.snapshot()
+
+                val startPayload = GameStartPayload(
+                    gameUuid = currentGameUuid,
+                    whitePlayerUuid = whiteUuid,
+                    whitePlayerName = whiteName,
+                    blackPlayerUuid = blackUuid,
+                    blackPlayerName = blackName,
+                    timeControlId = config.timeControl.id,
+                    initialFen = chessEngine.initialFen(),
+                    whiteRemainingMs = clockSnap.whiteRemainingMs,
+                    blackRemainingMs = clockSnap.blackRemainingMs,
+                    startedAtEpochMs = System.currentTimeMillis()
+                )
+                val statePayload = buildGameStatePayloadLocked(clockSnap)
+                shouldStartWatchdog = true
+                listOf(
+                    decisionEnvelope,
+                    createServerEnvelope(NetworkMessageType.ROOM_INFO, info),
+                    createServerEnvelope(NetworkMessageType.GAME_START, startPayload),
+                    createServerEnvelope(NetworkMessageType.GAME_STATE, statePayload)
+                )
+            }
+        }
+        toBroadcast.forEach { broadcastToAll(it) }
+        if (shouldStartWatchdog) {
+            startClockWatchdog()
+        }
+    }
+
     private fun startClockWatchdog() {
         clockSyncJob?.cancel()
         if (config.timeControl.isUnlimited) return
@@ -736,12 +1038,12 @@ class LocalGameServer(
         outcome: com.example.core.chess.GameOutcome,
         clockSnap: com.example.core.chess.ClockSnapshot
     ): NetworkEnvelope {
-        val whiteName = if (config.hostAssignedColor == PieceColor.WHITE) config.hostName else (clientName ?: "Игрок")
-        val blackName = if (config.hostAssignedColor == PieceColor.BLACK) config.hostName else (clientName ?: "Игрок")
+        val whiteName = if (currentHostColor == PieceColor.WHITE) config.hostName else (clientName ?: "Игрок")
+        val blackName = if (currentHostColor == PieceColor.BLACK) config.hostName else (clientName ?: "Игрок")
         return createServerEnvelope(
             type = NetworkMessageType.GAME_FINISHED,
             payload = GameFinishedPayload(
-                gameUuid = config.gameUuid,
+                gameUuid = currentGameUuid,
                 result = outcome.result,
                 reason = outcome.reason,
                 finalFen = chessEngine.currentFen(),
@@ -760,10 +1062,10 @@ class LocalGameServer(
 
     private fun buildGameStatePayloadLocked(clockSnap: com.example.core.chess.ClockSnapshot): GameStatePayload {
         val snap = chessEngine.snapshot()
-        val whiteName = if (config.hostAssignedColor == PieceColor.WHITE) config.hostName else (clientName ?: "Игрок")
-        val blackName = if (config.hostAssignedColor == PieceColor.BLACK) config.hostName else (clientName ?: "Игрок")
+        val whiteName = if (currentHostColor == PieceColor.WHITE) config.hostName else (clientName ?: "Игрок")
+        val blackName = if (currentHostColor == PieceColor.BLACK) config.hostName else (clientName ?: "Игрок")
         return GameStatePayload(
-            gameUuid = config.gameUuid,
+            gameUuid = currentGameUuid,
             fen = snap.fen,
             pgn = chessEngine.exportPgn(
                 PgnMetadata(
@@ -780,6 +1082,8 @@ class LocalGameServer(
             activeClockColor = clockSnap.activeColor,
             clockRunning = clockSnap.isRunning,
             drawOfferedBy = drawOfferedBy,
+            takebackRequestedBy = takebackRequestedBy,
+            rematchRequestedBy = rematchRequestedBy,
             result = snap.outcome?.result,
             terminationReason = snap.outcome?.reason
         )
@@ -788,14 +1092,14 @@ class LocalGameServer(
     private fun buildRoomInfoLocked(): RoomInfoPayload = RoomInfoPayload(
         roomId = config.roomId,
         roomCode = config.roomCode,
-        gameUuid = config.gameUuid,
+        gameUuid = currentGameUuid,
         hostUuid = config.hostUuid,
         hostName = config.hostName,
-        hostColor = config.hostAssignedColor,
+        hostColor = currentHostColor,
         hostReady = hostReady,
         clientUuid = clientUuid,
         clientName = clientName,
-        clientColor = config.clientAssignedColor,
+        clientColor = currentClientColor,
         clientReady = clientReady,
         timeControlId = config.timeControl.id,
         connectionType = config.connectionType,
@@ -803,8 +1107,8 @@ class LocalGameServer(
     )
 
     private fun resolveSenderColorLocked(senderUuid: String): PieceColor? = when (senderUuid) {
-        config.hostUuid -> config.hostAssignedColor
-        clientUuid -> config.clientAssignedColor
+        config.hostUuid -> currentHostColor
+        clientUuid -> currentClientColor
         else -> null
     }
 
@@ -826,7 +1130,7 @@ class LocalGameServer(
         type: NetworkMessageType,
         payload: T
     ): NetworkEnvelope = NetworkMessageSerializer.createEnvelope(
-        gameUuid = config.gameUuid,
+        gameUuid = currentGameUuid,
         senderUuid = config.hostUuid,
         type = type,
         sequenceNumber = sequenceCounter.incrementAndGet(),

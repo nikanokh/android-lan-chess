@@ -22,9 +22,13 @@ import com.example.core.network.PlayerConnectedPayload
 import com.example.core.network.PongPayload
 import com.example.core.network.ReconnectRequestPayload
 import com.example.core.network.ReconnectResponsePayload
+import com.example.core.network.RematchDecisionPayload
+import com.example.core.network.RematchRequestPayload
 import com.example.core.network.ResignPayload
 import com.example.core.network.RoomCreatedPayload
 import com.example.core.network.RoomInfoPayload
+import com.example.core.network.TakebackDecisionPayload
+import com.example.core.network.TakebackRequestPayload
 import com.example.domain.model.GameResult
 import com.example.domain.model.PieceColor
 import com.example.domain.model.SideSelection
@@ -37,8 +41,8 @@ import org.junit.Test
 class NetworkProtocolTest {
 
     @Test
-    fun allNineteenProtocolMessageTypesAreDefined() {
-        assertEquals(19, NetworkMessageType.entries.size)
+    fun allProtocolMessageTypesAreDefined() {
+        assertEquals(25, NetworkMessageType.entries.size)
         val expectedNames = setOf(
             "ROOM_CREATED",
             "ROOM_INFO",
@@ -52,6 +56,12 @@ class NetworkProtocolTest {
             "DRAW_OFFER",
             "DRAW_ACCEPTED",
             "DRAW_REJECTED",
+            "TAKEBACK_REQUEST",
+            "TAKEBACK_ACCEPTED",
+            "TAKEBACK_REJECTED",
+            "REMATCH_REQUEST",
+            "REMATCH_ACCEPTED",
+            "REMATCH_REJECTED",
             "RESIGN",
             "GAME_FINISHED",
             "PING",
@@ -107,6 +117,12 @@ class NetworkProtocolTest {
             createEnv(NetworkMessageType.DRAW_OFFER, DrawOfferPayload(PieceColor.WHITE)),
             createEnv(NetworkMessageType.DRAW_ACCEPTED, DrawDecisionPayload(PieceColor.BLACK, true)),
             createEnv(NetworkMessageType.DRAW_REJECTED, DrawDecisionPayload(PieceColor.BLACK, false)),
+            createEnv(NetworkMessageType.TAKEBACK_REQUEST, TakebackRequestPayload(PieceColor.WHITE, 0)),
+            createEnv(NetworkMessageType.TAKEBACK_ACCEPTED, TakebackDecisionPayload(PieceColor.BLACK, true)),
+            createEnv(NetworkMessageType.TAKEBACK_REJECTED, TakebackDecisionPayload(PieceColor.BLACK, false)),
+            createEnv(NetworkMessageType.REMATCH_REQUEST, RematchRequestPayload(PieceColor.WHITE)),
+            createEnv(NetworkMessageType.REMATCH_ACCEPTED, RematchDecisionPayload(PieceColor.BLACK, true, "game-2", true)),
+            createEnv(NetworkMessageType.REMATCH_REJECTED, RematchDecisionPayload(PieceColor.BLACK, false)),
             createEnv(NetworkMessageType.RESIGN, ResignPayload(PieceColor.WHITE)),
             createEnv(
                 NetworkMessageType.GAME_FINISHED,
@@ -122,7 +138,7 @@ class NetworkProtocolTest {
             createEnv(NetworkMessageType.DISCONNECT, DisconnectPayload("client-1", "Пользователь вышел"))
         )
 
-        assertEquals(19, cases.size)
+        assertEquals(25, cases.size)
         cases.forEach { (envelope, _) ->
             val encoded = NetworkMessageSerializer.encodeEnvelope(envelope)
             val decoded = NetworkMessageSerializer.decodeEnvelope(encoded).getOrThrow()

@@ -21,6 +21,12 @@ class GetGameHistoryUseCase @Inject constructor(
     operator fun invoke(): Flow<List<GameSummary>> = gameRepository.observeGameHistory()
 }
 
+class DeleteGameUseCase @Inject constructor(
+    private val gameRepository: GameRepository
+) {
+    suspend operator fun invoke(gameId: Long) = gameRepository.deleteGame(gameId)
+}
+
 class ObserveSettingsUseCase @Inject constructor(
     private val settingsRepository: SettingsRepository
 ) {

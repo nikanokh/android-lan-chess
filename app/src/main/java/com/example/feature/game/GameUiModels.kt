@@ -75,10 +75,15 @@ data class GameUiState(
     ),
     val drawOfferState: DrawOfferState = DrawOfferState.NONE,
     val drawOfferedBy: PieceColor? = null,
+    val takebackOfferState: DrawOfferState = DrawOfferState.NONE,
+    val takebackRequestedBy: PieceColor? = null,
+    val rematchOfferState: DrawOfferState = DrawOfferState.NONE,
+    val rematchRequestedBy: PieceColor? = null,
     val connectionStatus: ConnectionStatusUi = ConnectionStatusUi.LOCAL_PASS_AND_PLAY,
     val materialBalance: MaterialBalance = MaterialBalance(),
     val pendingPromotion: PendingPromotion? = null,
     val showResignConfirmDialog: Boolean = false,
+    val showExitConfirmDialog: Boolean = false,
     val showGameOverDialog: Boolean = false,
     val pgnPreview: String? = null
 ) {

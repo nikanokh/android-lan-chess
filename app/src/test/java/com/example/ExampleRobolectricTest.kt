@@ -91,7 +91,6 @@ class ExampleRobolectricTest {
     @Test
     fun homeScreen_displaysCoreActionsAndTriggersCallbacks() {
         var playClicked = false
-        var createClicked = false
         var joinMode: ConnectionType? = null
 
         composeRule.setContent {
@@ -99,7 +98,6 @@ class ExampleRobolectricTest {
                 HomeScreen(
                     uiState = HomeUiState(),
                     onPlayClick = { playClicked = true },
-                    onCreateGameClick = { createClicked = true },
                     onJoinGameClick = { joinMode = it },
                     onHistoryClick = {},
                     onAnalysisClick = {},
@@ -111,11 +109,9 @@ class ExampleRobolectricTest {
 
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("home_play_button").assertIsDisplayed().performClick()
-        composeRule.onNodeWithTag("home_create_game_button").assertIsDisplayed().performClick()
         composeRule.onNodeWithTag("home_join_game_button").assertIsDisplayed().performClick()
 
         assertTrue(playClicked)
-        assertTrue(createClicked)
         assertEquals(ConnectionType.WIFI_LAN, joinMode)
     }
 }

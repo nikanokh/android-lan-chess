@@ -28,6 +28,12 @@ enum class NetworkMessageType {
     DRAW_OFFER,
     DRAW_ACCEPTED,
     DRAW_REJECTED,
+    TAKEBACK_REQUEST,
+    TAKEBACK_ACCEPTED,
+    TAKEBACK_REJECTED,
+    REMATCH_REQUEST,
+    REMATCH_ACCEPTED,
+    REMATCH_REJECTED,
     RESIGN,
     GAME_FINISHED,
     PING,
@@ -148,6 +154,8 @@ data class GameStatePayload(
     val activeClockColor: PieceColor?,
     val clockRunning: Boolean,
     val drawOfferedBy: PieceColor? = null,
+    val takebackRequestedBy: PieceColor? = null,
+    val rematchRequestedBy: PieceColor? = null,
     val result: GameResult? = null,
     val terminationReason: GameTerminationReason? = null
 )
@@ -170,6 +178,31 @@ data class DrawOfferPayload(
 data class DrawDecisionPayload(
     val decidedBy: PieceColor,
     val accepted: Boolean
+)
+
+@Serializable
+data class TakebackRequestPayload(
+    val requestedBy: PieceColor,
+    val targetPly: Int
+)
+
+@Serializable
+data class TakebackDecisionPayload(
+    val decidedBy: PieceColor,
+    val accepted: Boolean
+)
+
+@Serializable
+data class RematchRequestPayload(
+    val requestedBy: PieceColor
+)
+
+@Serializable
+data class RematchDecisionPayload(
+    val decidedBy: PieceColor,
+    val accepted: Boolean,
+    val newGameUuid: String? = null,
+    val swapColors: Boolean = true
 )
 
 @Serializable

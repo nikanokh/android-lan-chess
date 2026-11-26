@@ -19,12 +19,23 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,22 +56,31 @@ import com.example.core.ui.theme.ChessTheme
 import com.example.core.ui.theme.MonoFontFamily
 import com.example.domain.model.GameResult
 import com.example.domain.model.GameSummary
+import com.example.domain.usecase.DeleteGameUseCase
 import com.example.domain.usecase.GetGameHistoryUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
 class HistoryViewModel @Inject constructor(
-    getGameHistoryUseCase: GetGameHistoryUseCase
+    getGameHistoryUseCase: GetGameHistoryUseCase,
+    private val deleteGameUseCase: DeleteGameUseCase
 ) : ViewModel() {
     val games: StateFlow<List<GameSummary>> = getGameHistoryUseCase().stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = emptyList()
     )
+
+    fun deleteGame(gameId: Long) {
+        viewModelScope.launch {
+            deleteGameUseCase(gameId)
+        }
+    }
 }
 
 @Composable
@@ -72,6 +92,7 @@ fun HistoryScreen(
     val games by viewModel.games.collectAsStateWithLifecycle()
     val colors = ChessTheme.colors
     val spacing = ChessTheme.spacing
+    var pendingDeleteGame by remember { mutableStateOf<GameSummary?>(null) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -140,28 +161,79 @@ fun HistoryScreen(
                     items(items = games, key = { it.id }) { game ->
                         HistoryGameCard(
                             game = game,
-                            onAnalyzeClick = { onAnalyzeGame(game.id) }
+                            onAnalyzeClick = { onAnalyzeGame(game.id) },
+                            onDeleteClick = { pendingDeleteGame = game }
                         )
                     }
                 }
             }
         }
     }
+
+    pendingDeleteGame?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingDeleteGame = null },
+            containerColor = colors.surfaceCard,
+            title = {
+                Text(
+                    text = stringResource(R.string.history_delete_title),
+                    color = colors.textPrimary
+                )
+            },
+            text = {
+                Text(
+                    text = stringResource(
+                        R.string.history_delete_body,
+                        target.whitePlayer,
+                        target.blackPlayer,
+                        resolveHistoryResultLabel(target.result)
+                    ),
+                    color = colors.textSecondary
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteGame(target.id)
+                        pendingDeleteGame = null
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = colors.accentCoral,
+                        contentColor = colors.textPrimary
+                    ),
+                    modifier = Modifier.testTag("confirm_delete_game_button")
+                ) {
+                    Text(stringResource(R.string.game_action_delete))
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { pendingDeleteGame = null },
+                    modifier = Modifier.testTag("cancel_delete_game_button")
+                ) {
+                    Text(stringResource(R.string.game_action_cancel))
+                }
+            }
+        )
+    }
+}
+
+private fun resolveHistoryResultLabel(result: GameResult): String = when (result) {
+    GameResult.WHITE_WIN -> "1–0"
+    GameResult.BLACK_WIN -> "0–1"
+    GameResult.DRAW -> "½–½"
+    GameResult.IN_PROGRESS -> "…"
+    GameResult.ABORTED -> "×"
 }
 
 @Composable
 private fun HistoryGameCard(
     game: GameSummary,
-    onAnalyzeClick: () -> Unit
+    onAnalyzeClick: () -> Unit,
+    onDeleteClick: () -> Unit
 ) {
     val colors = ChessTheme.colors
-    val resultLabel = when (game.result) {
-        GameResult.WHITE_WIN -> "1–0"
-        GameResult.BLACK_WIN -> "0–1"
-        GameResult.DRAW -> "½–½"
-        GameResult.IN_PROGRESS -> "…"
-        GameResult.ABORTED -> "×"
-    }
+    val resultLabel = resolveHistoryResultLabel(game.result)
     ChessSurfaceCard(
         modifier = Modifier
             .fillMaxWidth()
@@ -186,21 +258,9 @@ private fun HistoryGameCard(
                 )
             }
             Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Surface(
-                    onClick = onAnalyzeClick,
-                    shape = RoundedCornerShape(8.dp),
-                    color = colors.accentBlueContainer
-                ) {
-                    Text(
-                        text = "Анализ",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = colors.accentBlue,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                    )
-                }
                 Surface(
                     shape = RoundedCornerShape(8.dp),
                     color = colors.accentGreenContainer
@@ -210,6 +270,19 @@ private fun HistoryGameCard(
                         style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
                         color = colors.accentGreen,
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    )
+                }
+                IconButton(
+                    onClick = onDeleteClick,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .testTag("delete_history_game_${game.id}")
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Delete,
+                        contentDescription = stringResource(R.string.cd_delete_game),
+                        tint = colors.textMuted,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }

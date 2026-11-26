@@ -19,16 +19,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Devices
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Lan
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Router
-import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.Wifi
-import androidx.compose.material.icons.rounded.WifiTethering
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -36,7 +32,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -48,12 +43,10 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -67,7 +60,6 @@ import com.example.R
 import com.example.core.network.ConnectionState
 import com.example.core.network.ConnectionType
 import com.example.core.network.DiscoveredRoom
-import com.example.core.network.HotspotNetworkHelper
 import com.example.core.ui.components.ChessPrimaryButton
 import com.example.core.ui.components.ChessSecondaryButton
 import com.example.core.ui.components.ChessSurfaceCard
@@ -79,7 +71,6 @@ import com.example.core.ui.theme.MonoFontFamily
 
 @Composable
 fun JoinGameScreen(
-    initialMode: ConnectionType,
     onNavigateBack: () -> Unit,
     onJoinedLobby: () -> Unit,
     onOpenLocalGame: () -> Unit,
@@ -88,16 +79,12 @@ fun JoinGameScreen(
     val discoveredRooms by viewModel.discoveredRooms.collectAsStateWithLifecycle()
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val sessionState by viewModel.sessionState.collectAsStateWithLifecycle()
-    val wifiDirectState by viewModel.wifiDirectState.collectAsStateWithLifecycle()
     val defaultPlayerName by viewModel.defaultPlayerName.collectAsStateWithLifecycle()
 
-    val context = LocalContext.current
-    var selectedMode by rememberSaveable { mutableStateOf(initialMode) }
     var playerName by rememberSaveable { mutableStateOf("") }
     var hasSyncedDefaultName by rememberSaveable { mutableStateOf(false) }
     var showManualIpDialog by rememberSaveable { mutableStateOf(false) }
     var showQrScanner by rememberSaveable { mutableStateOf(false) }
-    var detectedGatewayIp by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(defaultPlayerName) {
         if (defaultPlayerName != null && !hasSyncedDefaultName) {
@@ -106,25 +93,9 @@ fun JoinGameScreen(
         }
     }
 
-    LaunchedEffect(selectedMode) {
+    LaunchedEffect(Unit) {
         viewModel.clearError()
-        viewModel.startDiscovery(selectedMode)
-        detectedGatewayIp = if (selectedMode == ConnectionType.HOTSPOT) {
-            HotspotNetworkHelper.resolveWifiGatewayIpv4(context)
-        } else {
-            null
-        }
-    }
-
-    // Auto-enter Lobby as soon as a Wi-Fi Direct client connection finishes WebSocket handshake
-    LaunchedEffect(sessionState.role, sessionState.roomId, sessionState.isConnecting) {
-        if (selectedMode == ConnectionType.WIFI_DIRECT &&
-            sessionState.role == com.example.core.network.SessionRole.CLIENT &&
-            sessionState.roomId.isNotBlank() &&
-            !sessionState.isConnecting
-        ) {
-            onJoinedLobby()
-        }
+        viewModel.startDiscovery(ConnectionType.WIFI_LAN)
     }
 
     DisposableEffect(Unit) {
@@ -154,13 +125,8 @@ fun JoinGameScreen(
     }
 
     if (showManualIpDialog) {
-        val prefillIp = when (selectedMode) {
-            ConnectionType.HOTSPOT -> detectedGatewayIp.orEmpty()
-            ConnectionType.WIFI_DIRECT -> wifiDirectState.groupOwnerAddress.orEmpty()
-            ConnectionType.WIFI_LAN -> ""
-        }
         ManualIpConnectDialog(
-            initialIp = prefillIp,
+            initialIp = "",
             isConnecting = isConnecting,
             onDismiss = { showManualIpDialog = false },
             onConnect = { ip, port, roomCode ->
@@ -169,7 +135,7 @@ fun JoinGameScreen(
                     portText = port,
                     roomCodeOrSecret = roomCode,
                     playerName = resolvedPlayerName,
-                    mode = selectedMode,
+                    mode = ConnectionType.WIFI_LAN,
                     onConnected = {
                         showManualIpDialog = false
                         onJoinedLobby()
@@ -230,72 +196,6 @@ fun JoinGameScreen(
                     }
                 }
 
-                item(key = "mode_selector") {
-                    Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
-                        SectionHeader(title = stringResource(R.string.join_game_mode_label))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            ModeToggleChip(
-                                label = stringResource(R.string.connection_wifi_lan),
-                                icon = Icons.Rounded.Wifi,
-                                selected = selectedMode == ConnectionType.WIFI_LAN,
-                                onClick = { selectedMode = ConnectionType.WIFI_LAN },
-                                testTag = "join_mode_wifi_lan",
-                                modifier = Modifier.weight(1f)
-                            )
-                            ModeToggleChip(
-                                label = stringResource(R.string.connection_hotspot),
-                                icon = Icons.Rounded.WifiTethering,
-                                selected = selectedMode == ConnectionType.HOTSPOT,
-                                onClick = { selectedMode = ConnectionType.HOTSPOT },
-                                testTag = "join_mode_hotspot",
-                                modifier = Modifier.weight(1f)
-                            )
-                            ModeToggleChip(
-                                label = stringResource(R.string.connection_wifi_direct),
-                                icon = Icons.Rounded.Devices,
-                                selected = selectedMode == ConnectionType.WIFI_DIRECT,
-                                onClick = { selectedMode = ConnectionType.WIFI_DIRECT },
-                                testTag = "join_mode_wifi_direct",
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
-                }
-
-                if (selectedMode == ConnectionType.HOTSPOT) {
-                    item(key = "hotspot_client_helper") {
-                        HotspotClientHelperCard(
-                            detectedGatewayIp = detectedGatewayIp,
-                            onOpenWifiSettings = { HotspotNetworkHelper.openWifiSettings(context) },
-                            onRefreshGateway = {
-                                detectedGatewayIp = HotspotNetworkHelper.resolveWifiGatewayIpv4(context)
-                                viewModel.startDiscovery(ConnectionType.HOTSPOT)
-                            }
-                        )
-                    }
-                }
-
-                if (selectedMode == ConnectionType.WIFI_DIRECT) {
-                    item(key = "wifi_direct_client_section") {
-                        WifiDirectClientSection(
-                            wifiDirectState = wifiDirectState,
-                            isConnectingSocket = isConnecting,
-                            onPermissionResult = { granted ->
-                                viewModel.onWifiDirectClientPermissionChanged(granted)
-                            },
-                            onRefreshPeers = {
-                                viewModel.startDiscovery(ConnectionType.WIFI_DIRECT)
-                            },
-                            onConnectPeer = { peer ->
-                                viewModel.connectToWifiDirectPeer(peer, resolvedPlayerName)
-                            }
-                        )
-                    }
-                }
-
                 val errorText = sessionState.lastError ?: (connectionState as? ConnectionState.Error)?.message
                 if (!errorText.isNullOrBlank()) {
                     item(key = "error_banner") {
@@ -352,12 +252,7 @@ fun JoinGameScreen(
                             }
                         }
                         IconButton(
-                            onClick = {
-                                if (selectedMode == ConnectionType.HOTSPOT) {
-                                    detectedGatewayIp = HotspotNetworkHelper.resolveWifiGatewayIpv4(context)
-                                }
-                                viewModel.startDiscovery(selectedMode)
-                            },
+                            onClick = { viewModel.startDiscovery(ConnectionType.WIFI_LAN) },
                             modifier = Modifier.testTag("join_refresh_discovery_button")
                         ) {
                             Icon(
@@ -380,11 +275,7 @@ fun JoinGameScreen(
                                 verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
                                 Icon(
-                                    imageVector = when (selectedMode) {
-                                        ConnectionType.WIFI_LAN -> Icons.Rounded.Router
-                                        ConnectionType.HOTSPOT -> Icons.Rounded.WifiTethering
-                                        ConnectionType.WIFI_DIRECT -> Icons.Rounded.Devices
-                                    },
+                                    imageVector = Icons.Rounded.Router,
                                     contentDescription = null,
                                     tint = colors.accentGreen,
                                     modifier = Modifier.size(40.dp)
@@ -396,11 +287,7 @@ fun JoinGameScreen(
                                     textAlign = TextAlign.Center
                                 )
                                 Text(
-                                    text = when (selectedMode) {
-                                        ConnectionType.WIFI_LAN -> stringResource(R.string.join_game_no_rooms_hint)
-                                        ConnectionType.HOTSPOT -> stringResource(R.string.join_game_hotspot_hint)
-                                        ConnectionType.WIFI_DIRECT -> stringResource(R.string.join_game_direct_hint)
-                                    },
+                                    text = stringResource(R.string.join_game_no_rooms_hint),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = colors.textSecondary,
                                     textAlign = TextAlign.Center
@@ -544,87 +431,6 @@ private fun DiscoveredRoomCard(
                     },
                     style = MaterialTheme.typography.labelLarge
                 )
-            }
-        }
-    }
-}
-
-@Composable
-private fun HotspotClientHelperCard(
-    detectedGatewayIp: String?,
-    onOpenWifiSettings: () -> Unit,
-    onRefreshGateway: () -> Unit
-) {
-    val colors = ChessTheme.colors
-    ChessSurfaceCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("join_hotspot_helper_card"),
-        borderColor = colors.accentGreen.copy(alpha = 0.55f)
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.WifiTethering,
-                    contentDescription = null,
-                    tint = colors.accentGreen,
-                    modifier = Modifier.size(20.dp)
-                )
-                Text(
-                    text = if (!detectedGatewayIp.isNullOrBlank()) {
-                        stringResource(R.string.hotspot_gateway_detected, detectedGatewayIp)
-                    } else {
-                        stringResource(R.string.connection_hotspot)
-                    },
-                    style = MaterialTheme.typography.titleSmall,
-                    color = colors.textPrimary
-                )
-            }
-            Text(
-                text = if (!detectedGatewayIp.isNullOrBlank()) {
-                    stringResource(R.string.hotspot_gateway_connect_hint)
-                } else {
-                    stringResource(R.string.join_game_hotspot_hint)
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.textSecondary
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedButton(
-                    onClick = onOpenWifiSettings,
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("join_open_wifi_settings_button"),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Settings,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = stringResource(R.string.hotspot_open_wifi_settings),
-                        maxLines = 1
-                    )
-                }
-                OutlinedButton(
-                    onClick = onRefreshGateway,
-                    modifier = Modifier.testTag("join_refresh_gateway_button"),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Refresh,
-                        contentDescription = stringResource(R.string.hotspot_refresh_ip),
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
             }
         }
     }

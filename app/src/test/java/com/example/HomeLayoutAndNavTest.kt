@@ -8,7 +8,6 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -20,7 +19,6 @@ import com.example.core.ui.navigation.navigateTopLevelTab
 import com.example.core.ui.theme.ChessLanTheme
 import com.example.feature.home.HomeScreen
 import com.example.feature.home.HomeUiState
-import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -35,13 +33,12 @@ class HomeLayoutAndNavTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun homeScreen_primaryActionCardsAndModeChips_haveEqualHeights() {
+    fun homeScreen_displaysPlayJoinAndQuickToolsWithoutRemovedSections() {
         composeRule.setContent {
             ChessLanTheme(darkTheme = true) {
                 HomeScreen(
                     uiState = HomeUiState(),
                     onPlayClick = {},
-                    onCreateGameClick = {},
                     onJoinGameClick = {},
                     onHistoryClick = {},
                     onAnalysisClick = {},
@@ -53,32 +50,15 @@ class HomeLayoutAndNavTest {
 
         composeRule.waitForIdle()
 
-        val createBounds = composeRule.onNodeWithTag("home_create_game_button")
-            .assertIsDisplayed()
-            .getUnclippedBoundsInRoot()
-        val joinBounds = composeRule.onNodeWithTag("home_join_game_button")
-            .assertIsDisplayed()
-            .getUnclippedBoundsInRoot()
-
-        val createHeight = (createBounds.bottom - createBounds.top).value
-        val joinHeight = (joinBounds.bottom - joinBounds.top).value
-        assertEquals("Create and Join action cards must have identical height", createHeight, joinHeight, 1f)
-
-        val lanBounds = composeRule.onNodeWithTag("home_mode_wifi_lan")
-            .assertIsDisplayed()
-            .getUnclippedBoundsInRoot()
-        val hotspotBounds = composeRule.onNodeWithTag("home_mode_hotspot")
-            .assertIsDisplayed()
-            .getUnclippedBoundsInRoot()
-        val directBounds = composeRule.onNodeWithTag("home_mode_wifi_direct")
-            .assertIsDisplayed()
-            .getUnclippedBoundsInRoot()
-
-        val lanHeight = (lanBounds.bottom - lanBounds.top).value
-        val hotspotHeight = (hotspotBounds.bottom - hotspotBounds.top).value
-        val directHeight = (directBounds.bottom - directBounds.top).value
-        assertEquals(lanHeight, hotspotHeight, 1f)
-        assertEquals(hotspotHeight, directHeight, 1f)
+        composeRule.onNodeWithTag("home_play_button").assertIsDisplayed()
+        composeRule.onNodeWithTag("home_join_game_button").assertIsDisplayed()
+        composeRule.onNodeWithTag("home_history_button").assertIsDisplayed()
+        composeRule.onNodeWithTag("home_analysis_button").assertIsDisplayed()
+        composeRule.onNodeWithTag("home_create_game_button").assertDoesNotExist()
+        composeRule.onNodeWithTag("home_mode_wifi_lan").assertDoesNotExist()
+        composeRule.onNodeWithTag("home_mode_hotspot").assertDoesNotExist()
+        composeRule.onNodeWithTag("home_mode_wifi_direct").assertDoesNotExist()
+        composeRule.onNodeWithTag("home_last_game_card").assertDoesNotExist()
     }
 
     @Test
@@ -113,7 +93,6 @@ class HomeLayoutAndNavTest {
                             HomeScreen(
                                 uiState = HomeUiState(),
                                 onPlayClick = { navigateTopLevelTab(navController, AppDestination.CreateGame) },
-                                onCreateGameClick = { navigateTopLevelTab(navController, AppDestination.CreateGame) },
                                 onJoinGameClick = { mode ->
                                     navController.navigate(AppDestination.JoinGame(initialMode = mode))
                                 },
@@ -149,8 +128,8 @@ class HomeLayoutAndNavTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("home_hero_card").assertIsDisplayed()
 
-        // 1. Navigate via Home card -> CreateGame, then press Home tab -> must return to Home
-        composeRule.onNodeWithTag("home_create_game_button").performClick()
+        // 1. Navigate via Home Play button -> CreateGame, then press Home tab -> must return to Home
+        composeRule.onNodeWithTag("home_play_button").performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("screen_create").assertIsDisplayed()
 

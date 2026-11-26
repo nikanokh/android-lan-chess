@@ -292,7 +292,6 @@ private fun ChessNavHost(
             Box(modifier = topLevelModifier) {
                 HomeRoute(
                     onPlayClick = { onSelectTopLevelTab(AppDestination.CreateGame) },
-                    onCreateGameClick = { onSelectTopLevelTab(AppDestination.CreateGame) },
                     onJoinGameClick = { mode ->
                         navController.navigate(AppDestination.JoinGame(initialMode = mode))
                     },
@@ -330,7 +329,6 @@ private fun ChessNavHost(
         composable<AppDestination.JoinGame> { backStackEntry ->
             val route = backStackEntry.toRoute<AppDestination.JoinGame>()
             JoinGameScreen(
-                initialMode = route.initialMode,
                 onNavigateBack = { navController.popBackStack() },
                 onJoinedLobby = {
                     navController.navigate(

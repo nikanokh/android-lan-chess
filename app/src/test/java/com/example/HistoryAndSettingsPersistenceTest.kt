@@ -16,6 +16,7 @@ import com.example.domain.model.GameResult
 import com.example.domain.model.PieceColor
 import com.example.domain.model.PieceSet
 import com.example.domain.repository.SettingsRepository
+import com.example.domain.usecase.DeleteGameUseCase
 import com.example.domain.usecase.ObserveSettingsUseCase
 import com.example.feature.game.GameViewModel
 import kotlinx.coroutines.delay
@@ -137,6 +138,12 @@ class HistoryAndSettingsPersistenceTest {
         val moves = database.moveDao().observeMovesForGame(saved.id).first()
         assertEquals(4, moves.size)
         assertEquals("Qh4#", moves.last().san)
+
+        // Verify DeleteGameUseCase removes the persisted game cleanly
+        val deleteGameUseCase = DeleteGameUseCase(gameRepository)
+        deleteGameUseCase(saved.id)
+        val afterDelete = gameRepository.observeGameHistory().first()
+        assertTrue(afterDelete.isEmpty())
     }
 
     @Test
